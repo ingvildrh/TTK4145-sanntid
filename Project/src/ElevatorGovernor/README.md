@@ -12,10 +12,10 @@ If so, I hope it won't be too late to lift the curse and transform it to a [lubb
 
 Orders Queue | Elevator 1 | Elevator 2 | Elevator 3
 ----------- | ---------- | ---------- | ----------
-Floor 4     | --- / :arrow_down: / :four: | --- / :arrow_down: / :four: | --- / :arrow_down: / :four:
+Floor 4     | ---- / :arrow_down: / :four: | ---- / :arrow_down: / :four: | ---- / :arrow_down: / :four:
 Floor 3     | :arrow_up: / :arrow_down: / :three: | :arrow_up: / :arrow_down: / :three: |  :arrow_up: / :arrow_down: / :three:
 Floor 2     | :arrow_up: / :arrow_down: / :two: | :arrow_up: / :arrow_down: / :two: |  :arrow_up: / :arrow_down: / :two:
-Floor 1     | :arrow_up: / --- / :one: | :arrow_up: / --- / :one: |  :arrow_up: / --- / :one:
+Floor 1     | :arrow_up: / ---- / :one: | :arrow_up: / ---- / :one: |  :arrow_up: / ---- / :one:
 
 Elevator State | Elevator 1 | Elevator 2 | Elevator 3
 --------------- | ---------- | ---------- | ----------
