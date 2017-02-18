@@ -1,11 +1,12 @@
 package Hardware
 
 import (
-	. "constants"
 	. "fmt"
 	"net"
 	"os"
 	"sync"
+
+	. "github.com/perkjelsvik/TTK4145-Sanntid/Project/constants"
 )
 
 const MOTOR_SPEED = 2800
@@ -35,7 +36,7 @@ const (
 var elevatorType Elev_type = ET_Comedi
 var conn *net.TCPConn
 var mtx *sync.Mutex
-var sim_port string = "15858"
+var sim_port string = "15857"
 
 func Init(e Elev_type) {
 	elevatorType = e

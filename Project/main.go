@@ -1,11 +1,11 @@
 package main
 
 import (
-	. "Hardware"
-	. "constants"
 	"fmt"
-	//. "math/rand"
 	"time"
+
+	. "github.com/perkjelsvik/TTK4145-Sanntid/Project/Hardware"
+	. "github.com/perkjelsvik/TTK4145-Sanntid/Project/constants"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 		if GetFloorSensorSignal() == 3 && flag != 1 {
 			SetMotorDirection(DirStop)
 			SetDoorOpenLamp(1)
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 			SetDoorOpenLamp(0)
 			SetMotorDirection(DirDown)
 			flag = 1
@@ -27,7 +27,7 @@ func main() {
 		if GetFloorSensorSignal() == 0 && flag != 0 {
 			SetMotorDirection(DirStop)
 			SetDoorOpenLamp(1)
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 			SetDoorOpenLamp(0)
 			SetMotorDirection(DirUp)
 			flag = 0
