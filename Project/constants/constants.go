@@ -1,4 +1,4 @@
-package Constants
+package constants
 
 // Scaleable declaration of #floors and #elevators
 const (
@@ -29,6 +29,6 @@ const (
 
 // Keypress struct for button type and floor location
 type Keypress struct {
-	Button int
-	Floor  int
+	Floor int
+	Btn   Button
 }

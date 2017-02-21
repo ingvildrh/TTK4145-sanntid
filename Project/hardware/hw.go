@@ -38,7 +38,7 @@ var conn *net.TCPConn
 var mtx *sync.Mutex
 var sim_port string = "15857"
 
-func Init(e Elev_type) {
+func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
 	elevatorType = e
 	switch elevatorType {
 	case ET_Comedi:
@@ -48,13 +48,22 @@ func Init(e Elev_type) {
 			Println("Unable to initialize elevator hardware!")
 			os.Exit(1)
 		}
-
 	case ET_Simulation:
 		addr, err := net.ResolveTCPAddr("tcp4", ":"+sim_port)
 		Println(err)
 		conn, err = net.DialTCP("tcp4", nil, addr)
 		Println(err)
 		mtx = &sync.Mutex{}
+	}
+
+	if GetFloorSensorSignal() == -1 {
+		SetMotorDirection(DirDown)
+	}
+	for {
+		if GetFloorSensorSignal() != -1 {
+			SetMotorDirection(DirStop)
+			break
+		}
 	}
 
 	for f := 0; f < NumFloors; f++ {
@@ -65,7 +74,9 @@ func Init(e Elev_type) {
 
 	setStopLamp(0)
 	SetDoorOpenLamp(0)
-	setFloorIndicator(0)
+	setFloorIndicator(GetFloorSensorSignal())
+	go buttonPoller(btnsPressed)
+	go floorIndicatorLoop(ArrivedAtFloor)
 }
 
 func SetMotorDirection(dirn Direction) {
@@ -125,7 +136,6 @@ func setFloorIndicator(floor int) {
 	}
 }
 
-// SetDoorOpenLamp comment
 func SetDoorOpenLamp(value int) {
 	switch elevatorType {
 	case ET_Comedi:
@@ -228,8 +238,41 @@ func getObstructionSignal() int {
 		buf := make([]byte, 4)
 		conn.Read(buf)
 		mtx.Unlock()
-		return int(buf[1])
-
 	}
 	return 0
+}
+
+func buttonPoller(btnsPressed chan Keypress) {
+	var btnPress Keypress
+	for {
+		for floor := 0; floor < NumFloors; floor++ {
+			for btn := BtnUp; btn < NumButtons; btn++ {
+				if getButtonSignal(btn, floor) == 1 {
+					// NOTE: Should NOT set btn lamp when netork up and running
+
+					SetButtonLamp(btn, floor, 1)
+					btnPress.Btn = btn
+					btnPress.Floor = floor
+					// FIXME: Need receving channel in governor
+					//btnsPressed <- btnPress
+					// NOTE: This is to test with ESM
+					// QUESTION: How to clear button_channel_matrix? It spams if we don't do this
+					button_channel_matrix[floor][btn] = 0
+					btnsPressed <- btnPress
+				}
+			}
+		}
+	}
+}
+
+func floorIndicatorLoop(ArrivedAtFloor chan int) {
+	prevFloor := GetFloorSensorSignal()
+	for {
+		floor := GetFloorSensorSignal()
+		if floor != -1 && floor != prevFloor {
+			setFloorIndicator(floor)
+			prevFloor = floor
+			ArrivedAtFloor <- floor
+		}
+	}
 }
