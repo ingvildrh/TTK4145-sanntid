@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"localip"
+	"github.com/perkjelsvik/TTK4145-sanntid/exercises/ex04/src/localip"
 )
 
 func Udp_receive() {

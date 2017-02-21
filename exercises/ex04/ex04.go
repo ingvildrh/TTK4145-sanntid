@@ -1,6 +1,6 @@
 package main
 
-import "./src/bcast"
+import "github.com/perkjelsvik/TTK4145-sanntid/exercises/ex04/src/bcast"
 
 func main() {
 	wait := make(chan int)

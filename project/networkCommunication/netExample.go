@@ -1,4 +1,4 @@
-package networkCommunication
+package main
 
 import (
 	"flag"
@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"./network/bcast"
-	"./network/localip"
-	"./network/peers"
+	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/bcast"
+	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/localip"
+	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/peers"
 )
 
 // We define some custom struct to send over the network.
