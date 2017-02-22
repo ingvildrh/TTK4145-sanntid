@@ -1,12 +1,13 @@
 package Hardware
 
 import (
-	. "fmt"
+	"fmt"
 	"net"
 	"os"
 	"sync"
+	"time"
 
-	. "github.com/perkjelsvik/TTK4145-Sanntid/Project/constants"
+	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
 )
 
 const MOTOR_SPEED = 2800
@@ -36,7 +37,7 @@ const (
 var elevatorType Elev_type = ET_Comedi
 var conn *net.TCPConn
 var mtx *sync.Mutex
-var sim_port string = "15857"
+var sim_port string = "9999"
 
 func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
 	elevatorType = e
@@ -45,14 +46,14 @@ func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
 		initSuccess := io_init()
 
 		if initSuccess == 0 {
-			Println("Unable to initialize elevator hardware!")
+			fmt.Println("Unable to initialize elevator hardware!")
 			os.Exit(1)
 		}
 	case ET_Simulation:
 		addr, err := net.ResolveTCPAddr("tcp4", ":"+sim_port)
-		Println(err)
+		fmt.Println(err)
 		conn, err = net.DialTCP("tcp4", nil, addr)
-		Println(err)
+		fmt.Println(err)
 		mtx = &sync.Mutex{}
 	}
 
@@ -244,22 +245,23 @@ func getObstructionSignal() int {
 
 func buttonPoller(btnsPressed chan Keypress) {
 	var btnPress Keypress
+	var btnsPressedMatrix [NumButtons][NumFloors]int
 	for {
+		time.Sleep(time.Millisecond * 20)
 		for floor := 0; floor < NumFloors; floor++ {
 			for btn := BtnUp; btn < NumButtons; btn++ {
-				if getButtonSignal(btn, floor) == 1 {
-					// NOTE: Should NOT set btn lamp when netork up and running
-
+				v := getButtonSignal(btn, floor)
+				if v == 1 && btnsPressedMatrix[btn][floor] != 1 {
+					// NOTE: Should NOT set btn lamp when governor up and running
 					SetButtonLamp(btn, floor, 1)
 					btnPress.Btn = btn
 					btnPress.Floor = floor
 					// FIXME: Need receving channel in governor
 					//btnsPressed <- btnPress
 					// NOTE: This is to test with ESM
-					// QUESTION: How to clear button_channel_matrix? It spams if we don't do this
-					button_channel_matrix[floor][btn] = 0
 					btnsPressed <- btnPress
 				}
+				btnsPressedMatrix[btn][floor] = v
 			}
 		}
 	}
@@ -268,6 +270,7 @@ func buttonPoller(btnsPressed chan Keypress) {
 func floorIndicatorLoop(ArrivedAtFloor chan int) {
 	prevFloor := GetFloorSensorSignal()
 	for {
+		time.Sleep(time.Millisecond * 20)
 		floor := GetFloorSensorSignal()
 		if floor != -1 && floor != prevFloor {
 			setFloorIndicator(floor)
