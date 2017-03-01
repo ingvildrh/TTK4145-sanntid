@@ -73,7 +73,7 @@ func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
 		}
 	}
 
-	setStopLamp(0)
+	SetStopLamp(0)
 	SetDoorOpenLamp(0)
 	setFloorIndicator(GetFloorSensorSignal())
 	go buttonPoller(btnsPressed)
@@ -94,7 +94,11 @@ func SetMotorDirection(dirn Direction) {
 		}
 	case ET_Simulation:
 		mtx.Lock()
-		conn.Write([]byte{1, byte(dirn), 0, 0})
+		if dirn < 0 {
+			conn.Write([]byte{1, 255, 0, 0})
+		} else {
+			conn.Write([]byte{1, byte(dirn), 0, 0})
+		}
 		mtx.Unlock()
 	}
 }
@@ -109,7 +113,7 @@ func SetButtonLamp(btn Button, floor int, value int) {
 		}
 	case ET_Simulation:
 		mtx.Lock()
-		conn.Write([]byte{1, byte(btn), byte(floor), byte(value)})
+		conn.Write([]byte{2, byte(btn), byte(floor), byte(value)})
 		mtx.Unlock()
 	}
 }
@@ -153,7 +157,7 @@ func SetDoorOpenLamp(value int) {
 	}
 }
 
-func setStopLamp(value int) {
+func SetStopLamp(value int) {
 	switch elevatorType {
 	case ET_Comedi:
 		if value > 0 {

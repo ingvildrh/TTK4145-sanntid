@@ -15,10 +15,9 @@ const (
 )
 
 type Channels struct {
-	OrderComplete chan int
-	ElevatorState chan int
-	StateError    chan error
-	//Localqueue     chan [NumFloors][NumButtons]int
+	OrderComplete  chan int
+	ElevatorState  chan int
+	StateError     chan error
 	NewOrderChan   chan Keypress
 	ArrivedAtFloor chan int
 	doorTimeout    chan bool
@@ -59,9 +58,7 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 					hw.SetButtonLamp(BtnUp, elevator.floor, 0)
 					hw.SetButtonLamp(BtnDown, elevator.floor, 0)
 					hw.SetButtonLamp(BtnInside, elevator.floor, 0)
-					elevator.queue[elevator.floor][BtnUp] = 0
-					elevator.queue[elevator.floor][BtnDown] = 0
-					elevator.queue[elevator.floor][BtnInside] = 0
+					elevator.queue[elevator.floor] = [NumButtons]int{}
 				} else {
 					elevator.state = moving
 				}
@@ -75,9 +72,7 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				hw.SetButtonLamp(BtnUp, elevator.floor, 0)
 				hw.SetButtonLamp(BtnDown, elevator.floor, 0)
 				hw.SetButtonLamp(BtnInside, elevator.floor, 0)
-				elevator.queue[elevator.floor][BtnUp] = 0
-				elevator.queue[elevator.floor][BtnDown] = 0
-				elevator.queue[elevator.floor][BtnInside] = 0
+				elevator.queue[elevator.floor] = [NumButtons]int{}
 			default:
 				fmt.Println("default error")
 			}
@@ -96,9 +91,7 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				hw.SetButtonLamp(BtnDown, elevator.floor, 0)
 				hw.SetButtonLamp(BtnInside, elevator.floor, 0)
 				hw.SetDoorOpenLamp(1)
-				elevator.queue[elevator.floor][BtnUp] = 0
-				elevator.queue[elevator.floor][BtnDown] = 0
-				elevator.queue[elevator.floor][BtnInside] = 0
+				elevator.queue[elevator.floor] = [NumButtons]int{}
 			}
 		case <-doorTimedOut:
 			// Order complete, send confirmation
