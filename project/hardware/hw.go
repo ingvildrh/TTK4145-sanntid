@@ -76,6 +76,7 @@ func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
 	SetStopLamp(0)
 	SetDoorOpenLamp(0)
 	setFloorIndicator(GetFloorSensorSignal())
+	// FIXME: Move these goroutines to main
 	go buttonPoller(btnsPressed)
 	go floorIndicatorLoop(ArrivedAtFloor)
 }

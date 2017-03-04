@@ -16,96 +16,75 @@ const (
 
 type Channels struct {
 	OrderComplete  chan int
-	ElevatorState  chan int
+	ElevatorChan   chan Elev
 	StateError     chan error
 	NewOrderChan   chan Keypress
 	ArrivedAtFloor chan int
 	doorTimeout    chan bool
 }
 
-type elev struct {
-	state int
-	dir   Direction
-	floor int
-	queue [NumFloors][NumButtons]int
-}
-
 func ESM_loop(ch Channels, btnsPressed chan Keypress) {
-	elevator := elev{
-		state: idle,
-		dir:   DirStop,
-		floor: hw.GetFloorSensorSignal(),
-		queue: [NumFloors][NumButtons]int{},
+	elevator := Elev{
+		State: idle,
+		Dir:   DirStop,
+		Floor: hw.GetFloorSensorSignal(),
+		Queue: [NumFloors][NumButtons]bool{},
 	}
 	var doorTimedOut <-chan time.Time
 	for {
 		select {
-		case newOrder := <-btnsPressed:
-			// Everytime new order, update local orders
-			// If idle, execute order
-			fmt.Println("New order at floor ", newOrder.Floor, " for button ", newOrder.Btn)
-			elevator.queue[newOrder.Floor][newOrder.Btn] = 1
-			switch elevator.state {
+		case newOrder := <-ch.NewOrderChan:
+			elevator.Queue[newOrder.Floor][newOrder.Btn] = true
+			switch elevator.State {
 			case idle:
-				elevator.dir = chooseDirection(elevator)
-				hw.SetMotorDirection(elevator.dir)
-				if elevator.dir == DirStop {
-					elevator.state = doorOpen
+				elevator.Dir = chooseDirection(elevator)
+				hw.SetMotorDirection(elevator.Dir)
+				if elevator.Dir == DirStop {
+					elevator.State = doorOpen
 					doorTimedOut = time.After(3 * time.Second)
 					hw.SetDoorOpenLamp(1)
-					// TODO: This functionality should not be here. Should be in governor.
 					// NB: Here we assume all orders are cleared at a floor.
-					hw.SetButtonLamp(BtnUp, elevator.floor, 0)
-					hw.SetButtonLamp(BtnDown, elevator.floor, 0)
-					hw.SetButtonLamp(BtnInside, elevator.floor, 0)
-					elevator.queue[elevator.floor] = [NumButtons]int{}
+					ch.OrderComplete <- newOrder.Floor
+					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				} else {
-					elevator.state = moving
+					elevator.State = moving
 				}
+				ch.ElevatorChan <- elevator
+				//ElevatorState <- Elev.floor, Elev.dir, Elev.state
 			case moving:
 			case doorOpen:
-				if chooseDirection(elevator) == DirStop {
+				if elevator.Floor == newOrder.Floor {
 					doorTimedOut = time.After(3 * time.Second)
+					ch.OrderComplete <- newOrder.Floor
+					// NB: Here we assume all orders are cleared at a floor.
+					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				}
-				// TODO: This functionality should not be here. Should be in governor.
-				// NB: Here we assume all orders are cleared at a floor.
-				hw.SetButtonLamp(BtnUp, elevator.floor, 0)
-				hw.SetButtonLamp(BtnDown, elevator.floor, 0)
-				hw.SetButtonLamp(BtnInside, elevator.floor, 0)
-				elevator.queue[elevator.floor] = [NumButtons]int{}
 			default:
 				fmt.Println("default error")
 			}
-		case elevator.floor = <-ch.ArrivedAtFloor:
-			fmt.Println("Arrived at floor", elevator.floor+1)
-			//fmt.Println(elevator.queue)
-			// Everytime we stop at floor, check if order complete
-			// if order complete, stop elevator etc.
+		case elevator.Floor = <-ch.ArrivedAtFloor:
+			fmt.Println("Arrived at floor", elevator.Floor+1)
 			if shouldStop(elevator) {
 				hw.SetMotorDirection(DirStop)
 				doorTimedOut = time.After(3 * time.Second)
-				elevator.state = doorOpen
-				// TODO: This functionality should not be here. Should be in governor.
-				// NB: Here we assume all orders are cleared at a floor.
-				hw.SetButtonLamp(BtnUp, elevator.floor, 0)
-				hw.SetButtonLamp(BtnDown, elevator.floor, 0)
-				hw.SetButtonLamp(BtnInside, elevator.floor, 0)
+				elevator.State = doorOpen
 				hw.SetDoorOpenLamp(1)
-				elevator.queue[elevator.floor] = [NumButtons]int{}
+				// NB: This clears all orders on the given floor
+				elevator.Queue[elevator.Floor] = [NumButtons]bool{}
+				ch.OrderComplete <- elevator.Floor
 			}
+			ch.ElevatorChan <- elevator
 		case <-doorTimedOut:
-			// Order complete, send confirmation
-			// check if any more orders, go to idle if not
-			// TODO: send order complete to governor
 			fmt.Println("Door timeout")
 			hw.SetDoorOpenLamp(0)
-			elevator.dir = chooseDirection(elevator)
-			if elevator.dir == DirStop {
-				elevator.state = idle
+			elevator.Dir = chooseDirection(elevator)
+			if elevator.Dir == DirStop {
+				elevator.State = idle
 			} else {
-				elevator.state = moving
-				hw.SetMotorDirection(elevator.dir)
+				elevator.State = moving
+				hw.SetMotorDirection(elevator.Dir)
 			}
+			ch.ElevatorChan <- elevator
 		}
 	}
 }
@@ -115,15 +94,15 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 // ch.doorTimeout <- true
 // }()
 
-func shouldStop(elevator elev) bool {
-	switch elevator.dir {
+func shouldStop(elevator Elev) bool {
+	switch elevator.Dir {
 	case DirUp:
-		return elevator.queue[elevator.floor][BtnUp] == 1 ||
-			elevator.queue[elevator.floor][BtnInside] == 1 ||
+		return elevator.Queue[elevator.Floor][BtnUp] ||
+			elevator.Queue[elevator.Floor][BtnInside] ||
 			!ordersAbove(elevator)
 	case DirDown:
-		return elevator.queue[elevator.floor][BtnDown] == 1 ||
-			elevator.queue[elevator.floor][BtnInside] == 1 ||
+		return elevator.Queue[elevator.Floor][BtnDown] ||
+			elevator.Queue[elevator.Floor][BtnInside] ||
 			!ordersBelow(elevator)
 	case DirStop:
 	default:
@@ -132,8 +111,8 @@ func shouldStop(elevator elev) bool {
 	return false
 }
 
-func chooseDirection(elevator elev) Direction {
-	switch elevator.dir {
+func chooseDirection(elevator Elev) Direction {
+	switch elevator.Dir {
 	case DirStop:
 		if ordersAbove(elevator) {
 			return DirUp
@@ -163,10 +142,10 @@ func chooseDirection(elevator elev) Direction {
 	return DirStop
 }
 
-func ordersAbove(elevator elev) bool {
-	for floor := elevator.floor + 1; floor < NumFloors; floor++ {
+func ordersAbove(elevator Elev) bool {
+	for floor := elevator.Floor + 1; floor < NumFloors; floor++ {
 		for btn := 0; btn < NumButtons; btn++ {
-			if elevator.queue[floor][btn] == 1 {
+			if elevator.Queue[floor][btn] {
 				return true
 			}
 		}
@@ -174,10 +153,10 @@ func ordersAbove(elevator elev) bool {
 	return false
 }
 
-func ordersBelow(elevator elev) bool {
-	for floor := 0; floor < elevator.floor; floor++ {
+func ordersBelow(elevator Elev) bool {
+	for floor := 0; floor < elevator.Floor; floor++ {
 		for btn := 0; btn < NumButtons; btn++ {
-			if elevator.queue[floor][btn] == 1 {
+			if elevator.Queue[floor][btn] {
 				return true
 			}
 		}
