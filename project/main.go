@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorGovernor"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorStateMachine"
@@ -11,29 +13,63 @@ import (
 
 func main() {
 	e := ET_Comedi
-	ch := Channels{
-		OrderComplete:  make(chan int),
-		ElevatorChan:   make(chan Elev),
-		StateError:     make(chan error),
+	esmChans := Channels{
+		OrderComplete: make(chan int),
+		ElevatorChan:  make(chan Elev),
+		//StateError:     make(chan error),
 		NewOrderChan:   make(chan Keypress),
 		ArrivedAtFloor: make(chan int),
 	}
+	syncChans := SyncChannels{
+		UpdateGovernor: make(chan [NumElevators]Elev),
+		UpdateSync:     make(chan Elev),
+		IncomingMsg:    make(chan Message),
+		OutgoingMsg:    make(chan Message),
+		OrderUpdate:    make(chan Keypress),
+	}
 	btnsPressed := make(chan Keypress)
-	NetworkUpdate := make(chan int)
-	syncBtnLights := make(chan bool)
-	incomingMsg := make(chan Msg)
-	outoingMsg := make(chan Msg)
+	syncBtnLights := make(chan [NumFloors][NumButtons]bool)
 
-	HW_init(e, btnsPressed, ch.ArrivedAtFloor)
-	//TODO: NetWorkUpdate channel to governor
+	HW_init(e, btnsPressed, esmChans.ArrivedAtFloor)
+
+	//TODO: make [NumElevators]Elev it's own type
 	ID := 0
 
-	go ESM_loop(ch, btnsPressed)
-	go GOV_loop(ID, ch, btnsPressed, NetworkUpdate, syncBtnLights)
+	go ESM_loop(esmChans, btnsPressed)
+	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)
-	go Transmitter(16569, outoingMsg)
-	go Receiver(16569, incomingMsg)
-	go SYNC_loop(NetworkUpdate, incomingMsg, ID)
-	go SYNC_periodicStateSpammer(outoingMsg)
+	go Transmitter(16569, syncChans.OutgoingMsg)
+	go Receiver(16569, syncChans.IncomingMsg)
+	go SYNC_loop(syncChans, ID)
+
+	elevator := Elev{
+		State: 0,
+		Dir:   DirStop,
+		Floor: 1,
+		Queue: [NumFloors][NumButtons]bool{},
+	}
+
+	elevator.Queue[2][BtnUp] = true
+
+	var elevList [NumElevators]Elev
+	elevList[ID] = elevator
+	elevList[ID].Queue[2][BtnUp] = true
+
+	var regOrders [NumFloors]AckMatrix
+
+	regOrders[2].OrderUp = true
+	regOrders[2].OrderDown = false
+	regOrders[2].DesignatedElevator = 2
+	regOrders[2].ImplicitAcks[2] = Acked
+
+	helloMsg := Message{
+		Elevator:         elevList,
+		RegisteredOrders: regOrders,
+	}
+
+	for i := 0; i < 100; i++ {
+		syncChans.IncomingMsg <- helloMsg
+		time.Sleep(2 * time.Second)
+	}
 	select {}
 }

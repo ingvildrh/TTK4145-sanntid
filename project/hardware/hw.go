@@ -41,6 +41,7 @@ var sim_port string = "9999"
 
 func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
 	elevatorType = e
+	fmt.Println("HARDWARE INIT")
 	switch elevatorType {
 	case ET_Comedi:
 		initSuccess := io_init()
@@ -258,12 +259,9 @@ func buttonPoller(btnsPressed chan Keypress) {
 				v := getButtonSignal(btn, floor)
 				if v == 1 && btnsPressedMatrix[btn][floor] != 1 {
 					// NOTE: Should NOT set btn lamp when governor up and running
-					SetButtonLamp(btn, floor, 1)
+					//SetButtonLamp(btn, floor, 1)
 					btnPress.Btn = btn
 					btnPress.Floor = floor
-					// FIXME: Need receving channel in governor
-					//btnsPressed <- btnPress
-					// NOTE: This is to test with ESM
 					btnsPressed <- btnPress
 				}
 				btnsPressedMatrix[btn][floor] = v

@@ -20,7 +20,6 @@ type Channels struct {
 	StateError     chan error
 	NewOrderChan   chan Keypress
 	ArrivedAtFloor chan int
-	doorTimeout    chan bool
 }
 
 func ESM_loop(ch Channels, btnsPressed chan Keypress) {
@@ -34,7 +33,9 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 	for {
 		select {
 		case newOrder := <-ch.NewOrderChan:
+			fmt.Println("BTN REC: ", newOrder.Btn)
 			elevator.Queue[newOrder.Floor][newOrder.Btn] = true
+			fmt.Println(elevator.Queue)
 			switch elevator.State {
 			case idle:
 				elevator.Dir = chooseDirection(elevator)
@@ -44,12 +45,13 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 					doorTimedOut = time.After(3 * time.Second)
 					hw.SetDoorOpenLamp(1)
 					// NB: Here we assume all orders are cleared at a floor.
+					//go func() {
 					ch.OrderComplete <- newOrder.Floor
+					//}()
 					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				} else {
 					elevator.State = moving
 				}
-				ch.ElevatorChan <- elevator
 				//ElevatorState <- Elev.floor, Elev.dir, Elev.state
 			case moving:
 			case doorOpen:
@@ -62,6 +64,7 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 			default:
 				fmt.Println("default error")
 			}
+			ch.ElevatorChan <- elevator
 		case elevator.Floor = <-ch.ArrivedAtFloor:
 			fmt.Println("Arrived at floor", elevator.Floor+1)
 			if shouldStop(elevator) {
@@ -71,7 +74,9 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				hw.SetDoorOpenLamp(1)
 				// NB: This clears all orders on the given floor
 				elevator.Queue[elevator.Floor] = [NumButtons]bool{}
+				//go func() {
 				ch.OrderComplete <- elevator.Floor
+				//}()
 			}
 			ch.ElevatorChan <- elevator
 		case <-doorTimedOut:

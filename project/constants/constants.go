@@ -32,12 +32,14 @@ type Keypress struct {
 	Floor              int
 	Btn                Button
 	DesignatedElevator int
+	Done               bool
 }
 
 type Elev struct {
 	State int
 	Dir   Direction
 	Floor int
+	//IDEA: make Queue private (queue)
 	Queue [NumFloors][NumButtons]bool
 }
 
@@ -48,7 +50,7 @@ type AckMatrix struct {
 	ImplicitAcks       [NumElevators]Acknowledge
 }
 
-type Msg struct {
+type Message struct {
 	Elevator         [NumElevators]Elev
 	RegisteredOrders [NumFloors]AckMatrix
 }
