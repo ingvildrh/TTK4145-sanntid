@@ -10,12 +10,12 @@ import (
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorGovernor"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorStateMachine"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/hardware"
-	//. "github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/bcast"
+	. "github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/bcast"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/syncElevators"
 )
 
 func main() {
-	e := ET_Comedi
+	e := ET_Simulation
 	esmChans := Channels{
 		OrderComplete: make(chan int, (NumFloors*NumButtons)-2),
 		ElevatorChan:  make(chan Elev, 10),
@@ -41,39 +41,40 @@ func main() {
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)
-	//go Transmitter(16569, syncChans.OutgoingMsg)
-	//go Receiver(16569, syncChans.IncomingMsg)
+	go Transmitter(16569, syncChans.OutgoingMsg)
+	go Receiver(16569, syncChans.IncomingMsg)
 	go SYNC_loop(syncChans, ID)
+	/*
+		elevator := Elev{
+			State: 0,
+			Dir:   DirStop,
+			Floor: 1,
+			Queue: [NumFloors][NumButtons]bool{},
+		}
 
-	elevator := Elev{
-		State: 0,
-		Dir:   DirStop,
-		Floor: 1,
-		Queue: [NumFloors][NumButtons]bool{},
-	}
+		elevator.Queue[2][BtnUp] = false
 
-	elevator.Queue[2][BtnUp] = false
+		var elevList [NumElevators]Elev
+		elevList[1] = elevator
 
-	var elevList [NumElevators]Elev
-	elevList[1] = elevator
+		var regOrders [NumFloors][NumButtons - 1]AckList
 
-	var regOrders [NumFloors][NumButtons - 1]AckList
+		regOrders[2][0].DesignatedElevator = 1
+		regOrders[2][0].ImplicitAcks[1] = NotAcked
 
-	regOrders[2][0].DesignatedElevator = 1
-	regOrders[2][0].ImplicitAcks[1] = NotAcked
-
-	helloMsg := Message{
-		Elevator:         elevList,
-		RegisteredOrders: regOrders,
-	}
-
+		helloMsg := Message{
+			Elevator:         elevList,
+			RegisteredOrders: regOrders,
+		}
+	*/
 	go killSwitch()
-
-	for {
-		time.Sleep(200 * time.Millisecond)
-		syncChans.IncomingMsg <- helloMsg
-	}
-	//select {}
+	/*
+		for {
+			time.Sleep(200 * time.Millisecond)
+			syncChans.IncomingMsg <- helloMsg
+		}
+	*/
+	select {}
 }
 
 func killSwitch() {

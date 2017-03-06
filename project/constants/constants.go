@@ -61,3 +61,17 @@ const (
 	NotAcked
 	Acked
 )
+
+// PrintBtn NB: er kun hjelpefunksjon, burde fjernes!
+func PrintBtn(btn Button) string {
+	switch btn {
+	case BtnUp:
+		return "UP"
+	case BtnDown:
+		return "DOWN"
+	case BtnInside:
+		return "INSIDE"
+	default:
+		return "ERROR"
+	}
+}

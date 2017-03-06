@@ -34,7 +34,6 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 		select {
 		case newOrder := <-ch.NewOrderChan:
 			elevator.Queue[newOrder.Floor][newOrder.Btn] = true
-			fmt.Println(elevator.Queue)
 			switch elevator.State {
 			case idle:
 				elevator.Dir = chooseDirection(elevator)
@@ -44,14 +43,11 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 					hw.SetDoorOpenLamp(1)
 					doorTimedOut = time.After(3 * time.Second)
 					// NB: Here we assume all orders are cleared at a floor.
-					//go func() {
 					ch.OrderComplete <- newOrder.Floor
-					//}()
 					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				} else {
 					elevator.State = moving
 				}
-				//ElevatorState <- Elev.floor, Elev.dir, Elev.state
 			case moving:
 			case doorOpen:
 				if elevator.Floor == newOrder.Floor {
@@ -74,14 +70,11 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				hw.SetDoorOpenLamp(1)
 				// NB: This clears all orders on the given floor
 				elevator.Queue[elevator.Floor] = [NumButtons]bool{}
-				//go func() {
 				ch.OrderComplete <- elevator.Floor
-				//}()
 			}
 			ch.ElevatorChan <- elevator
 
 		case <-doorTimedOut:
-			fmt.Println("Door timeout")
 			hw.SetDoorOpenLamp(0)
 			elevator.Dir = chooseDirection(elevator)
 			if elevator.Dir == DirStop {
@@ -94,11 +87,6 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 		}
 	}
 }
-
-// NOTE: Might be usual functionality, left here as an example
-// go func() {
-// ch.doorTimeout <- true
-// }()
 
 func shouldStop(elevator Elev) bool {
 	switch elevator.Dir {

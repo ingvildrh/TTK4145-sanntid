@@ -28,25 +28,28 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 	//var orderTimeout chan bool
 	var elevList [NumElevators]Elev
 	id := ID
-	designatedElevator := id
+	moving := 1
+	//designatedElevator := id
 	var completedOrder Keypress
 	completedOrder.DesignatedElevator = id
 	for {
 		select {
 		//QUESTION: burde vi flytte btnsPressed til Sync?? hehe
 		case newLocalOrder := <-btnsPressed:
-			if newLocalOrder.Floor == elevList[id].Floor && elevList[id].State != 1 {
+			// QUESTION: Move state: idle, moving and doorOpen to constants? Or something like this?
+			if newLocalOrder.Floor == elevList[id].Floor && elevList[id].State != moving {
 				ch.NewOrderChan <- newLocalOrder
 			} else {
 				if !duplicateOrder(newLocalOrder, elevList, id) {
-					fmt.Println("New order at floor ", newLocalOrder.Floor, " for button ", newLocalOrder.Btn)
+					fmt.Println("New order at floor ", newLocalOrder.Floor+1, " for button ", PrintBtn(newLocalOrder.Btn))
 					newLocalOrder.DesignatedElevator = costCalculator(newLocalOrder, elevList, id)
-					fmt.Println("new local order given to: ", designatedElevator)
+					//fmt.Println("new local order given to: ", designatedElevator)
 					orderUpdate <- newLocalOrder
 				}
 			}
 		case completedOrder.Floor = <-ch.OrderComplete:
 			completedOrder.Done = true
+			// QUESTION: We only return the floor. Here we set only 1 btnPress. Still acking works in sync?????????
 			for btn := BtnUp; btn < NumButtons; btn++ {
 				if elevList[id].Queue[completedOrder.Floor][btn] {
 					completedOrder.Btn = btn
@@ -55,7 +58,6 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 			elevList[id].Queue[completedOrder.Floor] = [NumButtons]bool{}
 			syncBtnLights <- elevList[id].Queue
 			orderUpdate <- completedOrder
-			fmt.Println("HER")
 		case tmpElev := <-ch.ElevatorChan:
 			tmpQueue := elevList[id].Queue
 			elevList[id] = tmpElev
@@ -74,7 +76,7 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 					// NOTE: potential problem of overwriting finished orders, then preventing new orders while acking finished
 					if tmpElevList[id].Queue[floor][btn] && !elevList[id].Queue[floor][btn] {
 						elevList[id].Queue[floor][btn] = true
-						fmt.Println(elevList[id].Queue[floor])
+						// NOTE: We don't really need to define DesignatedElevator since esm doesn't care
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: false}
 						ch.NewOrderChan <- order
 						newOrder = true
@@ -102,15 +104,15 @@ func duplicateOrder(order Keypress, elevList [NumElevators]Elev, id int) bool {
 
 func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 	//FIXME: This cost calcultor is stupid
-	elevList[1].Floor = 3
-	elevList[2].Floor = 2
+	//elevList[1].Floor = 3
+	//elevList[2].Floor = 2
 	minCost := 10
 	bestElevator := id
 	for elevator := 0; elevator < NumElevators; elevator++ {
 		// QUESTION: How to do Abs() properly?? any way?
 		floorDiff := order.Floor - elevList[elevator].Floor
 		if floorDiff == 0 {
-			return id
+			return bestElevator
 		} else if floorDiff < 0 {
 			floorDiff = -floorDiff
 		}
@@ -121,8 +123,7 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 		}
 
 	}
-	fmt.Println("BEST: ", bestElevator)
-	return id
+	return bestElevator
 }
 
 func GOV_lightsLoop(syncBtnLights chan [NumFloors][NumButtons]bool) {
@@ -139,9 +140,3 @@ func GOV_lightsLoop(syncBtnLights chan [NumFloors][NumButtons]bool) {
 		}
 	}
 }
-
-/*NOTE: should we have a compare between new network queue
-and already existing queue? only forward new orders to esm
-if actually new order? Could be done by for example:
-newQueue[floor][btn] != queue[floor][btn]
-*/

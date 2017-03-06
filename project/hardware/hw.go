@@ -51,7 +51,7 @@ func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
 			os.Exit(1)
 		}
 	case ET_Simulation:
-		addr, err := net.ResolveTCPAddr("tcp4", ":"+sim_port)
+		addr, err := net.ResolveTCPAddr("tcp4", "129.241.10.103:"+sim_port)
 		fmt.Println(err)
 		conn, err = net.DialTCP("tcp4", nil, addr)
 		fmt.Println(err)

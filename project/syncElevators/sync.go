@@ -1,7 +1,6 @@
 package syncElevators
 
 import (
-	"fmt"
 	"time"
 
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
@@ -51,17 +50,15 @@ func SYNC_loop(ch SyncChannels, id int) {
 				//registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id] = Finished
 				elevList[id].Queue[newOrder.Floor] = [NumButtons]bool{}
 				if newOrder.Btn != BtnInside {
+					// FIXME: this is to prevent out of index because of BtnInside. Need better fix.
 					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks = [NumElevators]Acknowledge{NotAcked, NotAcked, NotAcked}
-					fmt.Println(registeredOrders[newOrder.Floor])
 				}
 			} else {
-				fmt.Println("IMELLOM")
 				if newOrder.Btn == BtnInside {
 					// NB: Should probably send on net before adding to the queue. Exactly how unclear for now. To avoid immediate death after internal light on
 					elevList[id].Queue[newOrder.Floor][newOrder.Btn] = true
 				} else {
 					registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = 2
-					fmt.Println("BEFOREORDER: ", registeredOrders[newOrder.Floor])
 					registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = newOrder.DesignatedElevator
 					//NB: this is for testing purposes
 					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks = allAcked
@@ -69,11 +66,9 @@ func SYNC_loop(ch SyncChannels, id int) {
 				// // sende intern knappebestilling tilbake!!
 				// ch.UpdateGovernor <- elevList
 			}
-			fmt.Println("AFTERORDER: ", registeredOrders[newOrder.Floor])
-
 		case msg := <-ch.IncomingMsg:
+			someChange := false
 			// IDEA: Have another ack-state ackButNotAllAcked.
-			fmt.Println("INCOMING")
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if elevator == id {
 					continue
@@ -84,23 +79,29 @@ func SYNC_loop(ch SyncChannels, id int) {
 							registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
 							// QUESTION: This might not be safe - what about internal orders and costCalculator?
 							elevList[elevator].Queue[floor] = [NumButtons]bool{}
+							someChange = true
 						}
-						if msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] == Acked {
+						if msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] == Acked &&
+							registeredOrders[floor][btn].ImplicitAcks[elevator] != Acked &&
+							registeredOrders[floor][btn].ImplicitAcks[id] != Acked {
+							someChange = true
 							if registeredOrders[floor][btn].ImplicitAcks[id] == Finished {
 								registeredOrders[floor][btn].ImplicitAcks[elevator] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
 							} else {
 								registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
 							}
 						}
-						if registeredOrders[floor][btn].ImplicitAcks == allAcked {
+						if registeredOrders[floor][btn].ImplicitAcks == allAcked && !elevList[designatedElevator].Queue[floor][btn] {
 							designatedElevator = registeredOrders[floor][btn].DesignatedElevator
 							elevList[designatedElevator].Queue[floor][btn] = true
-							fmt.Println("KØ ALLACKED: ", elevList[designatedElevator].Queue[floor])
+							someChange = true
 						}
 					}
 				}
 			}
-			ch.UpdateGovernor <- elevList
+			if someChange {
+				ch.UpdateGovernor <- elevList
+			}
 		case <-updatePeersTimer:
 			sendMsg.RegisteredOrders = registeredOrders
 			sendMsg.Elevator = elevList
