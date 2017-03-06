@@ -35,17 +35,27 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 		select {
 		//QUESTION: burde vi flytte btnsPressed til Sync?? hehe
 		case newLocalOrder := <-btnsPressed:
-			if !duplicateOrder(newLocalOrder, elevList, id) {
-				fmt.Println("New order at floor ", newLocalOrder.Floor, " for button ", newLocalOrder.Btn)
-				newLocalOrder.DesignatedElevator = costCalculator(newLocalOrder, elevList, id)
-				fmt.Println("new local order given to: ", designatedElevator)
-				orderUpdate <- newLocalOrder
+			if newLocalOrder.Floor == elevList[id].Floor && elevList[id].State != 1 {
+				ch.NewOrderChan <- newLocalOrder
+			} else {
+				if !duplicateOrder(newLocalOrder, elevList, id) {
+					fmt.Println("New order at floor ", newLocalOrder.Floor, " for button ", newLocalOrder.Btn)
+					newLocalOrder.DesignatedElevator = costCalculator(newLocalOrder, elevList, id)
+					fmt.Println("new local order given to: ", designatedElevator)
+					orderUpdate <- newLocalOrder
+				}
 			}
 		case completedOrder.Floor = <-ch.OrderComplete:
 			completedOrder.Done = true
+			for btn := BtnUp; btn < NumButtons; btn++ {
+				if elevList[id].Queue[completedOrder.Floor][btn] {
+					completedOrder.Btn = btn
+				}
+			}
 			elevList[id].Queue[completedOrder.Floor] = [NumButtons]bool{}
 			syncBtnLights <- elevList[id].Queue
 			orderUpdate <- completedOrder
+			fmt.Println("HER")
 		case tmpElev := <-ch.ElevatorChan:
 			tmpQueue := elevList[id].Queue
 			elevList[id] = tmpElev
@@ -67,9 +77,6 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 						fmt.Println(elevList[id].Queue[floor])
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: false}
 						ch.NewOrderChan <- order
-						orderB := <-ch.OrderComplete
-						fmt.Println("BTN SENT: ", btn)
-						fmt.Println(orderB)
 						newOrder = true
 					}
 				}
@@ -97,7 +104,6 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 	//FIXME: This cost calcultor is stupid
 	elevList[1].Floor = 3
 	elevList[2].Floor = 2
-	fmt.Println("etasje nummer ", elevList[id].Floor)
 	minCost := 10
 	bestElevator := id
 	for elevator := 0; elevator < NumElevators; elevator++ {

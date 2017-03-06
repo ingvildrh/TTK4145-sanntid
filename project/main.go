@@ -1,34 +1,37 @@
 package main
 
 import (
+	"fmt"
+	"os"
+	"os/signal"
 	"time"
 
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorGovernor"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorStateMachine"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/hardware"
-	. "github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/bcast"
+	//. "github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/bcast"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/syncElevators"
 )
 
 func main() {
 	e := ET_Comedi
 	esmChans := Channels{
-		OrderComplete: make(chan int),
-		ElevatorChan:  make(chan Elev),
+		OrderComplete: make(chan int, (NumFloors*NumButtons)-2),
+		ElevatorChan:  make(chan Elev, 10),
 		//StateError:     make(chan error),
-		NewOrderChan:   make(chan Keypress),
+		NewOrderChan:   make(chan Keypress, (NumFloors*NumButtons)-2),
 		ArrivedAtFloor: make(chan int),
 	}
 	syncChans := SyncChannels{
 		UpdateGovernor: make(chan [NumElevators]Elev),
 		UpdateSync:     make(chan Elev),
-		IncomingMsg:    make(chan Message),
-		OutgoingMsg:    make(chan Message),
+		IncomingMsg:    make(chan Message, 10),
+		OutgoingMsg:    make(chan Message, 10),
 		OrderUpdate:    make(chan Keypress),
 	}
 	btnsPressed := make(chan Keypress)
-	syncBtnLights := make(chan [NumFloors][NumButtons]bool)
+	syncBtnLights := make(chan [NumFloors][NumButtons]bool, 10)
 
 	HW_init(e, btnsPressed, esmChans.ArrivedAtFloor)
 
@@ -38,8 +41,8 @@ func main() {
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)
-	go Transmitter(16569, syncChans.OutgoingMsg)
-	go Receiver(16569, syncChans.IncomingMsg)
+	//go Transmitter(16569, syncChans.OutgoingMsg)
+	//go Receiver(16569, syncChans.IncomingMsg)
 	go SYNC_loop(syncChans, ID)
 
 	elevator := Elev{
@@ -49,27 +52,44 @@ func main() {
 		Queue: [NumFloors][NumButtons]bool{},
 	}
 
-	elevator.Queue[2][BtnUp] = true
+	elevator.Queue[2][BtnUp] = false
 
 	var elevList [NumElevators]Elev
-	elevList[ID] = elevator
-	elevList[ID].Queue[2][BtnUp] = true
+	elevList[1] = elevator
 
-	var regOrders [NumFloors]AckMatrix
+	var regOrders [NumFloors][NumButtons - 1]AckList
 
-	regOrders[2].OrderUp = true
-	regOrders[2].OrderDown = false
-	regOrders[2].DesignatedElevator = 2
-	regOrders[2].ImplicitAcks[2] = Acked
+	regOrders[2][0].DesignatedElevator = 1
+	regOrders[2][0].ImplicitAcks[1] = NotAcked
 
 	helloMsg := Message{
 		Elevator:         elevList,
 		RegisteredOrders: regOrders,
 	}
 
-	for i := 0; i < 100; i++ {
+	go killSwitch()
+
+	for {
+		time.Sleep(200 * time.Millisecond)
 		syncChans.IncomingMsg <- helloMsg
-		time.Sleep(2 * time.Second)
 	}
-	select {}
+	//select {}
+}
+
+func killSwitch() {
+	// safeKill turns the motor off if the program is killed with CTRL+C.
+	var c = make(chan os.Signal)
+	signal.Notify(c, os.Interrupt)
+	<-c
+	SetMotorDirection(DirStop)
+	fmt.Println("\x1b[31;1m", "User terminated program.", "\x1b[0m")
+	for i := 0; i < 10; i++ {
+		if i%2 == 0 {
+			SetStopLamp(1)
+		} else {
+			SetStopLamp(0)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	os.Exit(1)
 }

@@ -43,16 +43,15 @@ type Elev struct {
 	Queue [NumFloors][NumButtons]bool
 }
 
-type AckMatrix struct {
-	OrderUp            bool
-	OrderDown          bool
+type AckList struct {
 	DesignatedElevator int
-	ImplicitAcks       [NumElevators]Acknowledge
+	//IDEA: Make this dynamic after online/offline elevators
+	ImplicitAcks [NumElevators]Acknowledge
 }
 
 type Message struct {
 	Elevator         [NumElevators]Elev
-	RegisteredOrders [NumFloors]AckMatrix
+	RegisteredOrders [NumFloors][NumButtons - 1]AckList
 }
 
 type Acknowledge int

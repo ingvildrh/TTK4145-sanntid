@@ -18,16 +18,16 @@ type SyncChannels struct {
 
 //QUESTION: should we ACK the ACK? Timeout the ACK? Or simply CheckAgain if one or more elvators become offline
 /*
-									ACK MATRIX
-{BtnUp BtnDown DesignatedElevator elev1 elev2 elev3}
-{BtnUp BtnDown DesignatedElevator elev1 elev2 elev3}
-{BtnUp BtnDown DesignatedElevator elev1 elev2 elev3}
-{BtnUp BtnDown DesignatedElevator elev1 elev2 elev3}
+												 ACK MATRIX
+{assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}
+{assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}
+{assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}
+{assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}
 */
 
 func SYNC_loop(ch SyncChannels, id int) {
 
-	var registeredOrders [NumFloors]AckMatrix
+	var registeredOrders [NumFloors][NumButtons - 1]AckList
 	var elevList [NumElevators]Elev
 	var sendMsg Message
 	var allAcked [NumElevators]Acknowledge
@@ -39,6 +39,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 	//updatePeersTimer = time.After(100 * time.Millisecond)
 	var designatedElevator int
 	// NOTE: burde vi importere constants som def eller liknende? mer lesbart
+
 	for {
 		select {
 		case tmpElev := <-ch.UpdateSync:
@@ -47,58 +48,59 @@ func SYNC_loop(ch SyncChannels, id int) {
 			elevList[id].Queue = tmpQueue
 		case newOrder := <-ch.OrderUpdate:
 			if newOrder.Done {
-				registeredOrders[newOrder.Floor].ImplicitAcks[id] = Finished
+				//registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id] = Finished
 				elevList[id].Queue[newOrder.Floor] = [NumButtons]bool{}
+				if newOrder.Btn != BtnInside {
+					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks = [NumElevators]Acknowledge{NotAcked, NotAcked, NotAcked}
+					fmt.Println(registeredOrders[newOrder.Floor])
+				}
 			} else {
+				fmt.Println("IMELLOM")
 				if newOrder.Btn == BtnInside {
+					// NB: Should probably send on net before adding to the queue. Exactly how unclear for now. To avoid immediate death after internal light on
 					elevList[id].Queue[newOrder.Floor][newOrder.Btn] = true
 				} else {
-					registeredOrders[newOrder.Floor].DesignatedElevator = newOrder.DesignatedElevator
+					registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = 2
+					fmt.Println("BEFOREORDER: ", registeredOrders[newOrder.Floor])
+					registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = newOrder.DesignatedElevator
 					//NB: this is for testing purposes
-					registeredOrders[newOrder.Floor].ImplicitAcks = allAcked
-					if newOrder.Btn == BtnUp {
-						registeredOrders[newOrder.Floor].OrderUp = true
-					} else if newOrder.Btn == BtnDown {
-						registeredOrders[newOrder.Floor].OrderDown = true
-					}
-					fmt.Println("BTN: ", registeredOrders[newOrder.Floor])
+					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks = allAcked
 				}
+				// // sende intern knappebestilling tilbake!!
+				// ch.UpdateGovernor <- elevList
 			}
+			fmt.Println("AFTERORDER: ", registeredOrders[newOrder.Floor])
+
 		case msg := <-ch.IncomingMsg:
 			// IDEA: Have another ack-state ackButNotAllAcked.
+			fmt.Println("INCOMING")
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if elevator == id {
 					continue
 				}
 				for floor := 0; floor < NumFloors; floor++ {
-					if msg.RegisteredOrders[floor].ImplicitAcks[elevator] == Finished {
-						registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id)
-						// QUESTION: This might not be safe - what about internal orders and costCalculator?
-						elevList[elevator].Queue[floor] = [NumButtons]bool{}
-					}
-					if msg.RegisteredOrders[floor].ImplicitAcks[elevator] == Acked {
-						if registeredOrders[floor].ImplicitAcks[id] == Finished {
-							registeredOrders[floor].ImplicitAcks[elevator] = msg.RegisteredOrders[floor].ImplicitAcks[elevator]
-						} else {
-							registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id)
+					for btn := BtnUp; btn < BtnInside; btn++ {
+						if msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] == Finished {
+							registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
+							// QUESTION: This might not be safe - what about internal orders and costCalculator?
+							elevList[elevator].Queue[floor] = [NumButtons]bool{}
 						}
-					}
-					if registeredOrders[floor].ImplicitAcks == allAcked {
-						designatedElevator = registeredOrders[floor].DesignatedElevator
-						if registeredOrders[floor].OrderUp && registeredOrders[floor].OrderDown {
-							elevList[designatedElevator].Queue[floor][BtnUp] = true
-							elevList[designatedElevator].Queue[floor][BtnDown] = true
-						} else if registeredOrders[floor].OrderUp {
-							elevList[designatedElevator].Queue[floor][BtnUp] = true
-						} else {
-							elevList[designatedElevator].Queue[floor][BtnDown] = true
+						if msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] == Acked {
+							if registeredOrders[floor][btn].ImplicitAcks[id] == Finished {
+								registeredOrders[floor][btn].ImplicitAcks[elevator] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
+							} else {
+								registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
+							}
 						}
-						ch.UpdateGovernor <- elevList
-						registeredOrders[floor].OrderUp = false
-						registeredOrders[floor].OrderDown = false
+						if registeredOrders[floor][btn].ImplicitAcks == allAcked {
+							designatedElevator = registeredOrders[floor][btn].DesignatedElevator
+							elevList[designatedElevator].Queue[floor][btn] = true
+							fmt.Println("KØ ALLACKED: ", elevList[designatedElevator].Queue[floor])
+						}
 					}
 				}
 			}
+			ch.UpdateGovernor <- elevList
 		case <-updatePeersTimer:
 			sendMsg.RegisteredOrders = registeredOrders
 			sendMsg.Elevator = elevList
@@ -108,11 +110,9 @@ func SYNC_loop(ch SyncChannels, id int) {
 	}
 }
 
-func copyMessage(msg Message, registeredOrders [NumFloors]AckMatrix, elevator int, floor int, id int) [NumFloors]AckMatrix {
-	registeredOrders[floor].ImplicitAcks[id] = msg.RegisteredOrders[floor].ImplicitAcks[elevator]
-	registeredOrders[floor].ImplicitAcks[elevator] = msg.RegisteredOrders[floor].ImplicitAcks[elevator]
-	registeredOrders[floor].DesignatedElevator = msg.RegisteredOrders[floor].DesignatedElevator
-	registeredOrders[floor].OrderDown = msg.RegisteredOrders[floor].OrderDown
-	registeredOrders[floor].OrderUp = msg.RegisteredOrders[floor].OrderUp
+func copyMessage(msg Message, registeredOrders [NumFloors][NumButtons - 1]AckList, elevator, floor, id int, btn Button) [NumFloors][NumButtons - 1]AckList {
+	registeredOrders[floor][btn].ImplicitAcks[id] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
+	registeredOrders[floor][btn].ImplicitAcks[elevator] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
+	registeredOrders[floor][btn].DesignatedElevator = msg.RegisteredOrders[floor][btn].DesignatedElevator
 	return registeredOrders
 }
