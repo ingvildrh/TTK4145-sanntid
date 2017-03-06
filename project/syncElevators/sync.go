@@ -51,7 +51,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 				elevList[id].Queue[newOrder.Floor] = [NumButtons]bool{}
 				if newOrder.Btn != BtnInside {
 					// FIXME: this is to prevent out of index because of BtnInside. Need better fix.
-					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks = [NumElevators]Acknowledge{NotAcked, NotAcked, NotAcked}
+					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks = [NumElevators]Acknowledge{NotAcked, NotAcked}
 				}
 			} else {
 				if newOrder.Btn == BtnInside {

@@ -37,12 +37,11 @@ func main() {
 
 	//TODO: make [NumElevators]Elev it's own type
 	ID := 0
-
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)
-	go Transmitter(16569, syncChans.OutgoingMsg)
-	go Receiver(16569, syncChans.IncomingMsg)
+	go Transmitter(9998, syncChans.OutgoingMsg)
+	go Receiver(9997, syncChans.IncomingMsg)
 	go SYNC_loop(syncChans, ID)
 	/*
 		elevator := Elev{

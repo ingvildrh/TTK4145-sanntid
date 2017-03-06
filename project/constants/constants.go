@@ -3,7 +3,7 @@ package constants
 // Scaleable declaration of #floors and #elevators
 const (
 	NumFloors    = 4
-	NumElevators = 3
+	NumElevators = 2
 	NumButtons   = 3
 )
 
