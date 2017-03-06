@@ -1,6 +1,7 @@
 package syncElevators
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
@@ -68,6 +69,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 			}
 		case msg := <-ch.IncomingMsg:
 			someChange := false
+			fmt.Println("HEI")
 			// IDEA: Have another ack-state ackButNotAllAcked.
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if elevator == id {

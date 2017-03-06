@@ -2,7 +2,8 @@ package constants
 
 // Scaleable declaration of #floors and #elevators
 const (
-	NumFloors    = 4
+	NumFloors = 4
+	//FIXME: Change back to 3 elevators
 	NumElevators = 2
 	NumButtons   = 3
 )
