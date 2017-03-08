@@ -1,24 +1,49 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"time"
 
+	"github.com/perkjelsvik/TTK4145-sanntid/exercises/ex04/src/localip"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorGovernor"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorStateMachine"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/hardware"
-	. "github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/bcast"
+	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/bcast"
+	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/peers"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/syncElevators"
 )
 
 func main() {
-	e := ET_Simulation
+	var elevType string
+	flag.StringVar(&elevType, "run", "", "run type")
+	flag.Parse()
+	e := ET_Comedi
+	if elevType == "sim" {
+		e = ET_Simulation
+		fmt.Println("Running in simulation mode!")
+	}
+
+	var id string
+	flag.StringVar(&id, "id", "", "id of this peer")
+	flag.Parse()
+
+	if id == "" {
+		localIP, err := localip.LocalIP()
+		if err != nil {
+			fmt.Println(err)
+			localIP = "DISCONNECTED"
+		}
+		id = fmt.Sprintf("peer-%s-%d", localIP, os.Getpid())
+	}
+	fmt.Println()
+
 	esmChans := Channels{
 		OrderComplete: make(chan int, (NumFloors*NumButtons)-2),
-		ElevatorChan:  make(chan Elev, 10),
+		ElevatorChan:  make(chan Elev),
 		//StateError:     make(chan error),
 		NewOrderChan:   make(chan Keypress, (NumFloors*NumButtons)-2),
 		ArrivedAtFloor: make(chan int),
@@ -26,23 +51,30 @@ func main() {
 	syncChans := SyncChannels{
 		UpdateGovernor: make(chan [NumElevators]Elev),
 		UpdateSync:     make(chan Elev),
-		IncomingMsg:    make(chan Message, 10),
-		OutgoingMsg:    make(chan Message, 10),
+		IncomingMsg:    make(chan Message),
+		OutgoingMsg:    make(chan Message),
 		OrderUpdate:    make(chan Keypress),
+		PeerUpdate:     make(chan peers.PeerUpdate),
+		PeerTxEnable:   make(chan bool),
 	}
 	btnsPressed := make(chan Keypress)
-	syncBtnLights := make(chan [NumFloors][NumButtons]bool, 10)
+	syncBtnLights := make(chan [NumFloors][NumButtons]bool)
 
 	HW_init(e, btnsPressed, esmChans.ArrivedAtFloor)
 
 	//TODO: make [NumElevators]Elev it's own type
+	//IDEA: make peer channels and thread
+	//QUESTION: Should we have inits as functions and then loops as gothreads?
 	ID := 0
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)
 	go SYNC_loop(syncChans, ID)
-	go Transmitter(9997, syncChans.OutgoingMsg)
-	go Receiver(9997, syncChans.IncomingMsg)
+
+	go peers.Transmitter(15648, id, syncChans.PeerTxEnable)
+	go peers.Receiver(15648, syncChans.PeerUpdate)
+	go bcast.Transmitter(9997, syncChans.OutgoingMsg)
+	go bcast.Receiver(9997, syncChans.IncomingMsg)
 	/*
 		elevator := Elev{
 			State: 0,

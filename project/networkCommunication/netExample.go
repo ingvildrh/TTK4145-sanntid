@@ -44,7 +44,7 @@ func main() {
 	// We can disable/enable the transmitter after it has been started.
 	// This could be used to signal that we are somehow "unavailable".
 	peerTxEnable := make(chan bool)
-	go peers.Transmitter(15647, id, peerTxEnable)
+	go peers.Transmitter(15648, id, peerTxEnable)
 	go peers.Receiver(15648, peerUpdateCh)
 
 	// We make channels for sending and receiving our custom data types
@@ -53,7 +53,7 @@ func main() {
 	// ... and start the transmitter/receiver pair on some port
 	// These functions can take any number of channels! It is also possible to
 	//  start multiple transmitters/receivers on the same port.
-	go bcast.Transmitter(16568, helloTx)
+	go bcast.Transmitter(16569, helloTx)
 	go bcast.Receiver(16569, helloRx)
 
 	// The example message. We just send one of these every second.

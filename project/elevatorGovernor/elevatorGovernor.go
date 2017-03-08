@@ -47,6 +47,7 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 					orderUpdate <- newLocalOrder
 				}
 			}
+
 		case completedOrder.Floor = <-ch.OrderComplete:
 			completedOrder.Done = true
 			// QUESTION: We only return the floor. Here we set only 1 btnPress. Still acking works in sync?????????
@@ -58,11 +59,13 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 			elevList[id].Queue[completedOrder.Floor] = [NumButtons]bool{}
 			syncBtnLights <- elevList[id].Queue
 			orderUpdate <- completedOrder
+
 		case tmpElev := <-ch.ElevatorChan:
 			tmpQueue := elevList[id].Queue
 			elevList[id] = tmpElev
 			elevList[id].Queue = tmpQueue
 			updateSync <- elevList[id]
+
 		case tmpElevList := <-updateGovernor:
 			newOrder := false
 			for elevator := 0; elevator < NumElevators; elevator++ {

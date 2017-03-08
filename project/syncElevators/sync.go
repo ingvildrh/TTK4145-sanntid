@@ -5,15 +5,18 @@ import (
 	"time"
 
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
+	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/peers"
 )
 
 type SyncChannels struct {
-	UpdateGovernor   chan [NumElevators]Elev
-	UpdateSync       chan Elev
-	OrderUpdate      chan Keypress
-	IncomingMsg      chan Message
-	OutgoingMsg      chan Message
-	updatePeersTimer chan time.Time
+	UpdateGovernor chan [NumElevators]Elev
+	UpdateSync     chan Elev
+	OrderUpdate    chan Keypress
+	IncomingMsg    chan Message
+	OutgoingMsg    chan Message
+	broadcastTimer <-chan time.Time
+	PeerUpdate     chan peers.PeerUpdate
+	PeerTxEnable   chan bool
 }
 
 //QUESTION: should we ACK the ACK? Timeout the ACK? Or simply CheckAgain if one or more elvators become offline
@@ -36,8 +39,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 	for i := 0; i < NumElevators; i++ {
 		allAcked[i] = Acked
 	}
-	var updatePeersTimer <-chan time.Time
-	updatePeersTimer = time.After(100 * time.Millisecond)
+	ch.broadcastTimer = time.After(100 * time.Millisecond)
 	var designatedElevator int
 	// NOTE: burde vi importere constants som def eller liknende? mer lesbart
 	for {
@@ -69,7 +71,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 			}
 		case msg := <-ch.IncomingMsg:
 			someChange := false
-			fmt.Println("Hello from me")
+			//fmt.Println("Hello from me")
 			// IDEA: Have another ack-state ackButNotAllAcked.
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if elevator == id {
@@ -104,12 +106,19 @@ func SYNC_loop(ch SyncChannels, id int) {
 			if someChange {
 				ch.UpdateGovernor <- elevList
 			}
-		case <-updatePeersTimer:
-			fmt.Println("Hello to you")
+
+		case <-ch.broadcastTimer:
+			//fmt.Println("Hello to you")
 			sendMsg.RegisteredOrders = registeredOrders
 			sendMsg.Elevator = elevList
 			ch.OutgoingMsg <- sendMsg
-			updatePeersTimer = time.After(100 * time.Millisecond)
+			ch.broadcastTimer = time.After(100 * time.Millisecond)
+
+		case p := <-ch.PeerUpdate:
+			fmt.Printf("Peer update:\n")
+			fmt.Printf("  Peers:    %q\n", p.Peers)
+			fmt.Printf("  New:      %q\n", p.New)
+			fmt.Printf("  Lost:     %q\n", p.Lost)
 		}
 	}
 }
