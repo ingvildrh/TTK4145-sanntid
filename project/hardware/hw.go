@@ -41,7 +41,6 @@ var sim_port string = "9999"
 
 func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
 	elevatorType = e
-	fmt.Println("HARDWARE INIT")
 	switch elevatorType {
 	case ET_Comedi:
 		initSuccess := io_init()

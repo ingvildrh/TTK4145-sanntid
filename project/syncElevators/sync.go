@@ -29,8 +29,6 @@ type SyncChannels struct {
 */
 
 func SYNC_loop(ch SyncChannels, id int) {
-
-	fmt.Println("Sync loop started!")
 	var registeredOrders [NumFloors][NumButtons - 1]AckList
 	var elevList [NumElevators]Elev
 	var sendMsg Message
@@ -40,7 +38,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 		allAcked[i] = Acked
 	}
 	ch.broadcastTimer = time.After(100 * time.Millisecond)
-	var designatedElevator int
+	designatedElevator := id
 	// NOTE: burde vi importere constants som def eller liknende? mer lesbart
 	for {
 		select {
@@ -48,29 +46,37 @@ func SYNC_loop(ch SyncChannels, id int) {
 			tmpQueue := elevList[id].Queue
 			elevList[id] = tmpElev
 			elevList[id].Queue = tmpQueue
+
 		case newOrder := <-ch.OrderUpdate:
 			if newOrder.Done {
-				//registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id] = Finished
+				// NB: Here we clear all orders from floor
 				elevList[id].Queue[newOrder.Floor] = [NumButtons]bool{}
 				if newOrder.Btn != BtnInside {
 					// FIXME: this is to prevent out of index because of BtnInside. Need better fix.
-					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks = [NumElevators]Acknowledge{NotAcked, NotAcked}
+					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id] = Finished
 				}
 			} else {
 				if newOrder.Btn == BtnInside {
 					// NB: Should probably send on net before adding to the queue. Exactly how unclear for now. To avoid immediate death after internal light on
 					elevList[id].Queue[newOrder.Floor][newOrder.Btn] = true
 				} else {
-					registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = 2
 					registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = newOrder.DesignatedElevator
 					//NB: this is for testing purposes
-					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks = allAcked
+					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id] = Acked
 				}
+				// NB: This seems like a bad idea, bound to be Deadlock
 				// // sende intern knappebestilling tilbake!!
 				// ch.UpdateGovernor <- elevList
 			}
+
 		case msg := <-ch.IncomingMsg:
-			someChange := false
+			someUpdate := false
+			if msg.Elevator != elevList {
+				tmpQueue := elevList[id].Queue
+				elevList = msg.Elevator
+				elevList[id].Queue = tmpQueue
+				someUpdate = true
+			}
 			//fmt.Println("Hello from me")
 			// IDEA: Have another ack-state ackButNotAllAcked.
 			for elevator := 0; elevator < NumElevators; elevator++ {
@@ -83,12 +89,11 @@ func SYNC_loop(ch SyncChannels, id int) {
 							registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
 							// QUESTION: This might not be safe - what about internal orders and costCalculator?
 							elevList[elevator].Queue[floor] = [NumButtons]bool{}
-							someChange = true
+							someUpdate = true
 						}
 						if msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] == Acked &&
 							registeredOrders[floor][btn].ImplicitAcks[elevator] != Acked &&
 							registeredOrders[floor][btn].ImplicitAcks[id] != Acked {
-							someChange = true
 							if registeredOrders[floor][btn].ImplicitAcks[id] == Finished {
 								registeredOrders[floor][btn].ImplicitAcks[elevator] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
 							} else {
@@ -98,14 +103,16 @@ func SYNC_loop(ch SyncChannels, id int) {
 						if registeredOrders[floor][btn].ImplicitAcks == allAcked && !elevList[designatedElevator].Queue[floor][btn] {
 							designatedElevator = registeredOrders[floor][btn].DesignatedElevator
 							elevList[designatedElevator].Queue[floor][btn] = true
-							someChange = true
+							someUpdate = true
 						}
 					}
 				}
 			}
-			if someChange {
+			if someUpdate {
 				ch.UpdateGovernor <- elevList
 			}
+		//FIXME: Should probably move these to outoing thread
+		//QUESTION: How to share elevList between the threads in the best way?
 
 		case <-ch.broadcastTimer:
 			//fmt.Println("Hello to you")
@@ -123,6 +130,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 	}
 }
 
+// FIXME: Change name to copyAckList? copyAckStatus? or something else?
 func copyMessage(msg Message, registeredOrders [NumFloors][NumButtons - 1]AckList, elevator, floor, id int, btn Button) [NumFloors][NumButtons - 1]AckList {
 	registeredOrders[floor][btn].ImplicitAcks[id] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
 	registeredOrders[floor][btn].ImplicitAcks[elevator] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]

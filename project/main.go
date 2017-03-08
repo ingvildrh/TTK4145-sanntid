@@ -18,18 +18,16 @@ import (
 )
 
 func main() {
-	var elevType string
-	flag.StringVar(&elevType, "run", "", "run type")
-	flag.Parse()
+	elevType := ""
+	id := ""
 	e := ET_Comedi
+	flag.StringVar(&elevType, "run", "", "run type")
+	flag.StringVar(&id, "id", "", "id of this peer")
+	flag.Parse()
 	if elevType == "sim" {
 		e = ET_Simulation
 		fmt.Println("Running in simulation mode!")
 	}
-
-	var id string
-	flag.StringVar(&id, "id", "", "id of this peer")
-	flag.Parse()
 
 	if id == "" {
 		localIP, err := localip.LocalIP()
@@ -41,6 +39,7 @@ func main() {
 	}
 	fmt.Println()
 
+	// TODO: Define channels as input/output/bidirectional instead of all bidirectional
 	esmChans := Channels{
 		OrderComplete: make(chan int, (NumFloors*NumButtons)-2),
 		ElevatorChan:  make(chan Elev),
@@ -64,6 +63,7 @@ func main() {
 
 	//TODO: make [NumElevators]Elev it's own type
 	//IDEA: make peer channels and thread
+	//TODO: ID should be the id from above, and then simply use map
 	//QUESTION: Should we have inits as functions and then loops as gothreads?
 	ID := 0
 	go ESM_loop(esmChans, btnsPressed)

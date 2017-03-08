@@ -10,15 +10,15 @@ import (
 
 //NOTE: queue and state info suggestion so far
 /*
-  #1		 #2		  #3
-floor  floor  floor
- dir		dir		 dir
-state	 state	state
-0 0 0  0 0 0  0 0 0
-0 0 0  0 0 0  0 0 0
-0 0 0  0 0 0  0 0 0
-0 0 0  0 0 0  0 0 0
-0 = false, 1 = true
+  id1		 id2		 id3
+ floor  floor  floor
+  dir		dir		 dir
+ state	 state	state
+ 0 0 0  0 0 0  0 0 0
+ 0 0 0  0 0 0  0 0 0
+ 0 0 0  0 0 0  0 0 0
+ 0 0 0  0 0 0  0 0 0
+ 0 = false, 1 = true
 */
 
 // TODO: Deal with elevatorState and StateError channels
