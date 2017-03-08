@@ -51,8 +51,8 @@ func main() {
 		UpdateGovernor: make(chan [NumElevators]Elev),
 		UpdateSync:     make(chan Elev),
 		IncomingMsg:    make(chan Message),
-		OutgoingMsg:    make(chan Message),
-		OrderUpdate:    make(chan Keypress),
+		OutgoingMsg:    make(chan Message, 10),
+		OrderUpdate:    make(chan Keypress, 10),
 		PeerUpdate:     make(chan peers.PeerUpdate),
 		PeerTxEnable:   make(chan bool),
 	}
@@ -60,12 +60,11 @@ func main() {
 	syncBtnLights := make(chan [NumFloors][NumButtons]bool)
 
 	HW_init(e, btnsPressed, esmChans.ArrivedAtFloor)
-
 	//TODO: make [NumElevators]Elev it's own type
 	//IDEA: make peer channels and thread
 	//TODO: ID should be the id from above, and then simply use map
 	//QUESTION: Should we have inits as functions and then loops as gothreads?
-	ID := 0
+	ID := 1
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)

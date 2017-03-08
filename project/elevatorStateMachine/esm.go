@@ -30,6 +30,7 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 		Queue: [NumFloors][NumButtons]bool{},
 	}
 	var doorTimedOut <-chan time.Time
+	ch.ElevatorChan <- elevator
 	for {
 		select {
 		case newOrder := <-ch.NewOrderChan:

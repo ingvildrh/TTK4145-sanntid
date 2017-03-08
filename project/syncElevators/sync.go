@@ -72,8 +72,11 @@ func SYNC_loop(ch SyncChannels, id int) {
 		case msg := <-ch.IncomingMsg:
 			someUpdate := false
 			if msg.Elevator != elevList {
+				fmt.Println("FUNKER")
 				tmpQueue := elevList[id].Queue
+				//fmt.Println("tmpQueue: ", tmpQueue)
 				elevList = msg.Elevator
+				//fmt.Println("elevList: ", elevList[id].Queue)
 				elevList[id].Queue = tmpQueue
 				someUpdate = true
 			}

@@ -109,23 +109,32 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 	//FIXME: This cost calcultor is stupid
 	//elevList[1].Floor = 3
 	//elevList[2].Floor = 2
-	minCost := 10
+	minCost := 100
 	bestElevator := id
+	floorDiff := 0
 	for elevator := 0; elevator < NumElevators; elevator++ {
 		// QUESTION: How to do Abs() properly?? any way?
-		floorDiff := order.Floor - elevList[elevator].Floor
+		fmt.Println("Heis ", elevator, "er på etasje ", elevList[elevator].Floor+1)
+		fmt.Println("og den har state ", elevList[elevator].State)
+		fmt.Println("og den har Dir", elevList[elevator].Dir)
+		floorDiff = order.Floor - elevList[elevator].Floor
 		if floorDiff == 0 {
+			fmt.Println("ASSIGNED ELEV: ", bestElevator)
+			fmt.Println("FLOOR DIFF WAS: ", floorDiff)
+			bestElevator = elevator
 			return bestElevator
 		} else if floorDiff < 0 {
 			floorDiff = -floorDiff
 		}
 
-		if minCost > floorDiff {
+		if floorDiff < minCost {
 			minCost = floorDiff
 			bestElevator = elevator
 		}
 
 	}
+	fmt.Println("ASSIGNED ELEV UT: ", bestElevator)
+	fmt.Println("FLOOR DIFF WAS: ", floorDiff)
 	return bestElevator
 }
 
