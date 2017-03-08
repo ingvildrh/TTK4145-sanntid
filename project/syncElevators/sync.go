@@ -27,6 +27,7 @@ type SyncChannels struct {
 
 func SYNC_loop(ch SyncChannels, id int) {
 
+	fmt.Println("Sync loop started!")
 	var registeredOrders [NumFloors][NumButtons - 1]AckList
 	var elevList [NumElevators]Elev
 	var sendMsg Message
@@ -36,10 +37,9 @@ func SYNC_loop(ch SyncChannels, id int) {
 		allAcked[i] = Acked
 	}
 	var updatePeersTimer <-chan time.Time
-	//updatePeersTimer = time.After(100 * time.Millisecond)
+	updatePeersTimer = time.After(100 * time.Millisecond)
 	var designatedElevator int
 	// NOTE: burde vi importere constants som def eller liknende? mer lesbart
-
 	for {
 		select {
 		case tmpElev := <-ch.UpdateSync:
@@ -69,7 +69,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 			}
 		case msg := <-ch.IncomingMsg:
 			someChange := false
-			fmt.Println("HEI")
+			fmt.Println("Hello from me")
 			// IDEA: Have another ack-state ackButNotAllAcked.
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if elevator == id {
@@ -105,6 +105,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 				ch.UpdateGovernor <- elevList
 			}
 		case <-updatePeersTimer:
+			fmt.Println("Hello to you")
 			sendMsg.RegisteredOrders = registeredOrders
 			sendMsg.Elevator = elevList
 			ch.OutgoingMsg <- sendMsg

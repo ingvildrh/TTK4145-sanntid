@@ -36,50 +36,50 @@ func main() {
 	HW_init(e, btnsPressed, esmChans.ArrivedAtFloor)
 
 	//TODO: make [NumElevators]Elev it's own type
-	ID := 1
+	ID := 0
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)
-	go Transmitter(9996, syncChans.OutgoingMsg)
-	go Receiver(9997, syncChans.IncomingMsg)
 	go SYNC_loop(syncChans, ID)
+	go Transmitter(9997, syncChans.OutgoingMsg)
+	go Receiver(9997, syncChans.IncomingMsg)
+	/*
+		elevator := Elev{
+			State: 0,
+			Dir:   DirStop,
+			Floor: 1,
+			Queue: [NumFloors][NumButtons]bool{},
+		}
 
-	elevator := Elev{
-		State: 0,
-		Dir:   DirStop,
-		Floor: 1,
-		Queue: [NumFloors][NumButtons]bool{},
-	}
+		var elevList [NumElevators]Elev
+		elevList[1] = elevator
 
-	var elevList [NumElevators]Elev
-	elevList[1] = elevator
+		var regOrders [NumFloors][NumButtons - 1]AckList
 
-	var regOrders [NumFloors][NumButtons - 1]AckList
+		regOrders[2][1].DesignatedElevator = 1
+		regOrders[2][1].ImplicitAcks[1] = Acked
+		regOrders[0][0].DesignatedElevator = 0
+		regOrders[0][0].ImplicitAcks[1] = Acked
 
-	regOrders[2][1].DesignatedElevator = 1
-	regOrders[2][1].ImplicitAcks[1] = Acked
-	regOrders[0][0].DesignatedElevator = 0
-	regOrders[0][0].ImplicitAcks[1] = Acked
-
-	helloMsg := Message{
-		Elevator:         elevList,
-		RegisteredOrders: regOrders,
-	}
-
+		helloMsg := Message{
+			Elevator:         elevList,
+			RegisteredOrders: regOrders,
+		}
+	*/
 	go killSwitch()
-
-	for {
-		elevator.Queue[2][BtnDown] = true
-		time.Sleep(5000 * time.Millisecond)
-		syncChans.OutgoingMsg <- helloMsg
-		elevator.Queue[2][BtnDown] = false
-		time.Sleep(5000 * time.Millisecond)
-		elevator.Queue[0][BtnUp] = true
-		syncChans.OutgoingMsg <- helloMsg
-		elevator.Queue[0][BtnUp] = false
-	}
-
-	//select {}
+	/*
+		for {
+			elevator.Queue[2][BtnDown] = true
+			time.Sleep(5000 * time.Millisecond)
+			syncChans.OutgoingMsg <- helloMsg
+			elevator.Queue[2][BtnDown] = false
+			time.Sleep(5000 * time.Millisecond)
+			elevator.Queue[0][BtnUp] = true
+			syncChans.OutgoingMsg <- helloMsg
+			elevator.Queue[0][BtnUp] = false
+		}
+	*/
+	select {}
 }
 
 func killSwitch() {
