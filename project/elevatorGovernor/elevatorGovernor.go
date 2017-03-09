@@ -67,6 +67,7 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 			updateSync <- elevList[id]
 
 		case tmpElevList := <-updateGovernor:
+			//fmt.Println("Some change! Governator updated")
 			newOrder := false
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if elevator == id {
@@ -81,7 +82,9 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 						elevList[id].Queue[floor][btn] = true
 						// NOTE: We don't really need to define DesignatedElevator since esm doesn't care
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: false}
-						ch.NewOrderChan <- order
+						go func() {
+							ch.NewOrderChan <- order
+						}()
 						newOrder = true
 					}
 				}
@@ -107,34 +110,46 @@ func duplicateOrder(order Keypress, elevList [NumElevators]Elev, id int) bool {
 
 func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 	//FIXME: This cost calcultor is stupid
-	//elevList[1].Floor = 3
-	//elevList[2].Floor = 2
 	minCost := 100
 	bestElevator := id
 	floorDiff := 0
+	//FIXME: should move to constnts, probably
+	moving := 1
+	doorOpen := 2
 	for elevator := 0; elevator < NumElevators; elevator++ {
 		// QUESTION: How to do Abs() properly?? any way?
-		fmt.Println("Heis ", elevator, "er på etasje ", elevList[elevator].Floor+1)
-		fmt.Println("og den har state ", elevList[elevator].State)
-		fmt.Println("og den har Dir", elevList[elevator].Dir)
+		//fmt.Println("Heis ", elevator, "er på etasje ", elevList[elevator].Floor+1)
+		//fmt.Println("og den har state ", elevList[elevator].State)
+		//fmt.Println("og den har Dir", elevList[elevator].Dir)
 		floorDiff = order.Floor - elevList[elevator].Floor
-		if floorDiff == 0 {
+		cost := floorDiff
+		if floorDiff == 0 && elevList[elevator].State != moving {
 			fmt.Println("ASSIGNED ELEV: ", bestElevator)
 			fmt.Println("FLOOR DIFF WAS: ", floorDiff)
 			bestElevator = elevator
 			return bestElevator
-		} else if floorDiff < 0 {
-			floorDiff = -floorDiff
 		}
-
-		if floorDiff < minCost {
-			minCost = floorDiff
+		if floorDiff < 0 {
+			cost = -cost
+			floorDiff = -floorDiff
+			if elevList[elevator].Dir == DirUp {
+				cost++
+			}
+		} else if floorDiff > 0 {
+			if elevList[elevator].Dir == DirDown {
+				cost++
+			}
+		} else if elevList[elevator].State == doorOpen || elevList[elevator].State == moving {
+			cost++
+		}
+		if cost < minCost {
+			minCost = cost
 			bestElevator = elevator
 		}
-
+		fmt.Println("elevator ", elevator, "has cost ", cost)
 	}
 	fmt.Println("ASSIGNED ELEV UT: ", bestElevator)
-	fmt.Println("FLOOR DIFF WAS: ", floorDiff)
+	fmt.Println("FLOOR DIFF WAS: ", minCost)
 	return bestElevator
 }
 

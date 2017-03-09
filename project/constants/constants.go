@@ -4,7 +4,7 @@ package constants
 const (
 	NumFloors = 4
 	//FIXME: Change back to 3 elevators
-	NumElevators = 2
+	NumElevators = 3
 	NumButtons   = 3
 )
 
@@ -53,6 +53,7 @@ type AckList struct {
 type Message struct {
 	Elevator         [NumElevators]Elev
 	RegisteredOrders [NumFloors][NumButtons - 1]AckList
+	ID               int
 }
 
 type Acknowledge int

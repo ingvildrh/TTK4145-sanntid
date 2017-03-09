@@ -55,7 +55,9 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 			case doorOpen:
 				if elevator.Floor == newOrder.Floor {
 					doorTimedOut = time.After(3 * time.Second)
-					ch.OrderComplete <- newOrder.Floor
+					go func() {
+						ch.OrderComplete <- newOrder.Floor
+					}()
 					// NB: Here we assume all orders are cleared at a floor.
 					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				}
@@ -73,7 +75,9 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				hw.SetDoorOpenLamp(1)
 				// NB: This clears all orders on the given floor
 				elevator.Queue[elevator.Floor] = [NumButtons]bool{}
-				ch.OrderComplete <- elevator.Floor
+				go func() {
+					ch.OrderComplete <- elevator.Floor
+				}()
 			}
 			ch.ElevatorChan <- elevator
 

@@ -281,7 +281,7 @@ final class SimulationState {
         }
         bg[0][] = "+-----------+"   ~ "-".repeat(numFloors*4+1).join                      ~ "+            ";
         bg[1][] = "|           |"   ~ " ".repeat(numFloors*4+1).join                      ~ "|            ";
-        bg[2][] = "| Floor     |  " ~ iota(0, numFloors).map!(to!string).join("   ")    ~ "  |            ";
+        bg[2][] = "| Floor     |  " ~ iota(1, numFloors+1).map!(to!string).join("   ")    ~ "  |            ";
         bg[3][] = "+-----------+"   ~ "-".repeat(numFloors*4+1).join                      ~ "+-----------+";
         bg[4][] = "| Hall Up   |"   ~ " ".repeat(numFloors*4+1).join                      ~ "| Door:     |";
         bg[5][] = "| Hall Down |"   ~ " ".repeat(numFloors*4+1).join                      ~ "| Stop:     |";
@@ -361,17 +361,17 @@ void main(string[] args){
         state.writeln;
     }
     printState;
-    
+
 
     auto stdinParseTid          = spawnLinked(&stdinParseProc, thisTid);
     auto stdinGetterTid         = spawnLinked(&stdinGetterProc, stdinParseTid);
     auto networkInterfaceTid    = spawnLinked(&networkInterfaceProc, thisTid);
-    
-    
+
+
     import core.thread : Thread;
     foreach(ref t; Thread.getAll){
         t.isDaemon = true;
-    }    
+    }
 
     auto stateUpdated = false;
 
@@ -380,7 +380,7 @@ void main(string[] args){
             printState;
         }
         stateUpdated = true;
-        
+
         receive(
             /// --- RESET --- ///
 
@@ -545,7 +545,7 @@ void main(string[] args){
 
 
             /// --- OTHER --- ///
-            
+
             (LinkTerminated lt){
                 assert(false, "Child thread terminated, shutting down...");
             },
@@ -653,7 +653,7 @@ void stdinParseProc(Tid receiver){
 
 void networkInterfaceProc(Tid receiver){
     try {
-    
+
     Socket acceptSock = new TcpSocket();
 
     acceptSock.setOption(SocketOptionLevel.SOCKET, SocketOption.REUSEADDR, 1);
@@ -732,23 +732,8 @@ void networkInterfaceProc(Tid receiver){
             }
         }
     }
-    
+
     } catch(Throwable t){
         writeln(typeid(t).name, "@", t.file, "(", t.line, "): ", t.msg);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

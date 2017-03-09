@@ -18,6 +18,13 @@ import (
 )
 
 func main() {
+	// TODO: Change static arrays to slices (Elev, ElevList etc.)
+	// TODO: Change to maps for elevList etc. as well
+	// TODO: Handling lost and new peers
+	// TODO: Handle crashing
+	// TODO: Handle losing network (complete internal orders)
+	// TODO: Actually light the lights on all the elevators
+	// TODO: General cleanup (rename constants, go through code/declarations etc.)
 	elevType := ""
 	id := ""
 	e := ET_Comedi
@@ -48,10 +55,10 @@ func main() {
 
 	// TODO: Define channels as input/output/bidirectional instead of all bidirectional
 	esmChans := Channels{
-		OrderComplete: make(chan int, (NumFloors*NumButtons)-2),
+		OrderComplete: make(chan int),
 		ElevatorChan:  make(chan Elev),
 		//StateError:     make(chan error),
-		NewOrderChan:   make(chan Keypress, (NumFloors*NumButtons)-2),
+		NewOrderChan:   make(chan Keypress),
 		ArrivedAtFloor: make(chan int),
 	}
 	syncChans := SyncChannels{
@@ -78,8 +85,8 @@ func main() {
 
 	go peers.Transmitter(15648, id, syncChans.PeerTxEnable)
 	go peers.Receiver(15648, syncChans.PeerUpdate)
-	go bcast.Transmitter(9997, syncChans.OutgoingMsg)
-	go bcast.Receiver(9997, syncChans.IncomingMsg)
+	go bcast.Transmitter(42034, syncChans.OutgoingMsg)
+	go bcast.Receiver(42034, syncChans.IncomingMsg)
 	/*
 		elevator := Elev{
 			State: 0,
