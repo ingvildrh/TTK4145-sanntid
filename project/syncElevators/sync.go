@@ -101,20 +101,22 @@ func SYNC_loop(ch SyncChannels, id int) {
 							if registeredOrders[floor][btn].ImplicitAcks[id] == Finished {
 								registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
 							}
-
 						case Acked:
 							if registeredOrders[floor][btn].ImplicitAcks[id] == NotAcked {
 								registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
 							}
 							if registeredOrders[floor][btn].ImplicitAcks == allAcked &&
-								!elevList[designatedElevator].Queue[floor][btn] {
-								designatedElevator = registeredOrders[floor][btn].DesignatedElevator
-								elevList[designatedElevator].Queue[floor][btn] = true
+								!elevList[designatedElevator].Queue[floor][btn] &&
+								registeredOrders[floor][btn].DesignatedElevator == id {
+								elevList[id].Queue[floor][btn] = true
 								someUpdate = true
 							}
 						case Finished:
 							if registeredOrders[floor][btn].ImplicitAcks[id] == Acked {
 								registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
+							}
+							if registeredOrders[floor][btn].ImplicitAcks == allFinished {
+								registeredOrders[floor][btn].ImplicitAcks[id] = NotAcked
 							}
 						}
 					}
