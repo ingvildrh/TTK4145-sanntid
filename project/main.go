@@ -21,9 +21,16 @@ func main() {
 	elevType := ""
 	id := ""
 	e := ET_Comedi
+	ID := 0
+	simPort := ""
 	flag.StringVar(&elevType, "run", "", "run type")
 	flag.StringVar(&id, "id", "", "id of this peer")
+	flag.IntVar(&ID, "ID", 0, "ID of this elevator")
+	flag.StringVar(&simPort, "simPort", "9998", "simulation server port")
 	flag.Parse()
+	if ID != 0 {
+		fmt.Println("ID: ", ID)
+	}
 	if elevType == "sim" {
 		e = ET_Simulation
 		fmt.Println("Running in simulation mode!")
@@ -51,20 +58,19 @@ func main() {
 		UpdateGovernor: make(chan [NumElevators]Elev),
 		UpdateSync:     make(chan Elev),
 		IncomingMsg:    make(chan Message),
-		OutgoingMsg:    make(chan Message, 10),
-		OrderUpdate:    make(chan Keypress, 10),
+		OutgoingMsg:    make(chan Message),
+		OrderUpdate:    make(chan Keypress),
 		PeerUpdate:     make(chan peers.PeerUpdate),
 		PeerTxEnable:   make(chan bool),
 	}
 	btnsPressed := make(chan Keypress)
 	syncBtnLights := make(chan [NumFloors][NumButtons]bool)
 
-	HW_init(e, btnsPressed, esmChans.ArrivedAtFloor)
+	HW_init(e, btnsPressed, esmChans.ArrivedAtFloor, simPort)
 	//TODO: make [NumElevators]Elev it's own type
 	//IDEA: make peer channels and thread
 	//TODO: ID should be the id from above, and then simply use map
 	//QUESTION: Should we have inits as functions and then loops as gothreads?
-	ID := 1
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)

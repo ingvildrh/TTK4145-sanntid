@@ -37,9 +37,10 @@ const (
 var elevatorType Elev_type = ET_Comedi
 var conn *net.TCPConn
 var mtx *sync.Mutex
-var sim_port string = "9999"
+var sim_port string
 
-func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int) {
+func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int, simPort string) {
+	sim_port = simPort
 	elevatorType = e
 	switch elevatorType {
 	case ET_Comedi:

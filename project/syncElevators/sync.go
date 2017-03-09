@@ -33,9 +33,16 @@ func SYNC_loop(ch SyncChannels, id int) {
 	var elevList [NumElevators]Elev
 	var sendMsg Message
 	var allAcked [NumElevators]Acknowledge
-	//NOTE: allAcked := [NumElevators]Acknowledge{Acked, Acked, Acked}
+	var allFinished [NumElevators]Acknowledge
+	var allNotAcked [NumElevators]Acknowledge
+	// NOTE: status {0 0 0} trumps {-1 -1 -1}
+	// NOTE: status {0 0 1} trumps {-1 -1 1 }
+	// NOTE: possible to go from {0 0 0} -> {1 1 1} -> {-1 -1 -1} -> {0 0 0}
+	// NOTE: allAcked := [NumElevators]Acknowledge{Acked, Acked, Acked}
 	for i := 0; i < NumElevators; i++ {
 		allAcked[i] = Acked
+		allFinished[i] = Finished
+		allNotAcked[i] = NotAcked
 	}
 	ch.broadcastTimer = time.After(100 * time.Millisecond)
 	designatedElevator := id
@@ -73,11 +80,11 @@ func SYNC_loop(ch SyncChannels, id int) {
 			someUpdate := false
 			if msg.Elevator != elevList {
 				fmt.Println("FUNKER")
-				tmpQueue := elevList[id].Queue
+				tmpElevator := elevList[id]
 				//fmt.Println("tmpQueue: ", tmpQueue)
 				elevList = msg.Elevator
 				//fmt.Println("elevList: ", elevList[id].Queue)
-				elevList[id].Queue = tmpQueue
+				elevList[id] = tmpElevator
 				someUpdate = true
 			}
 			//fmt.Println("Hello from me")
@@ -88,25 +95,27 @@ func SYNC_loop(ch SyncChannels, id int) {
 				}
 				for floor := 0; floor < NumFloors; floor++ {
 					for btn := BtnUp; btn < BtnInside; btn++ {
-						if msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] == Finished {
-							registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
-							// QUESTION: This might not be safe - what about internal orders and costCalculator?
-							elevList[elevator].Queue[floor] = [NumButtons]bool{}
-							someUpdate = true
-						}
-						if msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] == Acked &&
-							registeredOrders[floor][btn].ImplicitAcks[elevator] != Acked &&
-							registeredOrders[floor][btn].ImplicitAcks[id] != Acked {
+						// IDEA: Could compress by having if new is +1 or -2 of our own status -> copy
+						switch msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] {
+						case NotAcked:
 							if registeredOrders[floor][btn].ImplicitAcks[id] == Finished {
-								registeredOrders[floor][btn].ImplicitAcks[elevator] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
-							} else {
 								registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
 							}
-						}
-						if registeredOrders[floor][btn].ImplicitAcks == allAcked && !elevList[designatedElevator].Queue[floor][btn] {
-							designatedElevator = registeredOrders[floor][btn].DesignatedElevator
-							elevList[designatedElevator].Queue[floor][btn] = true
-							someUpdate = true
+
+						case Acked:
+							if registeredOrders[floor][btn].ImplicitAcks[id] == NotAcked {
+								registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
+							}
+							if registeredOrders[floor][btn].ImplicitAcks == allAcked &&
+								!elevList[designatedElevator].Queue[floor][btn] {
+								designatedElevator = registeredOrders[floor][btn].DesignatedElevator
+								elevList[designatedElevator].Queue[floor][btn] = true
+								someUpdate = true
+							}
+						case Finished:
+							if registeredOrders[floor][btn].ImplicitAcks[id] == Acked {
+								registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
+							}
 						}
 					}
 				}
@@ -125,6 +134,7 @@ func SYNC_loop(ch SyncChannels, id int) {
 			ch.broadcastTimer = time.After(100 * time.Millisecond)
 
 		case p := <-ch.PeerUpdate:
+			// FIXME: Need a zeroStatus (bool) to handle One Elevator Alive and regaining connection
 			fmt.Printf("Peer update:\n")
 			fmt.Printf("  Peers:    %q\n", p.Peers)
 			fmt.Printf("  New:      %q\n", p.New)
