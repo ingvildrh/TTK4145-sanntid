@@ -1,10 +1,12 @@
 package constants
 
+import "os/exec"
+
 // Scaleable declaration of #floors and #elevators
 const (
 	NumFloors = 4
 	//FIXME: Change back to 3 elevators
-	NumElevators = 3
+	NumElevators = 2
 	NumButtons   = 3
 )
 
@@ -77,3 +79,6 @@ func PrintBtn(btn Button) string {
 		return "ERROR"
 	}
 }
+
+// Restart command used to spawn a new elevator process in case of power loss (ctrl+c)
+var Restart = exec.Command("gnome-terminal", "-x", "sh", "-c", "sleep 3s;  go run main.go -simPort=9997 -ID=0 -run=sim")

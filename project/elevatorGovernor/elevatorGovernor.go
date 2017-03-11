@@ -24,7 +24,7 @@ import (
 // TODO: Deal with elevatorState and StateError channels
 func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 	updateSync chan Elev, updateGovernor chan [NumElevators]Elev,
-	orderUpdate chan Keypress, syncBtnLights chan [NumFloors][NumButtons]bool) {
+	orderUpdate chan Keypress, syncBtnLights chan [NumElevators]Elev) { //[NumFloors][NumButtons]bool) {
 	//var orderTimeout chan bool
 	var elevList [NumElevators]Elev
 	id := ID
@@ -57,8 +57,9 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 				}
 			}
 			elevList[id].Queue[completedOrder.Floor] = [NumButtons]bool{}
-			syncBtnLights <- elevList[id].Queue
+			//syncBtnLights <- elevList //[id].Queue
 			orderUpdate <- completedOrder
+			syncBtnLights <- elevList //[id].Queue
 
 		case tmpElev := <-ch.ElevatorChan:
 			tmpQueue := elevList[id].Queue
@@ -72,6 +73,9 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if elevator == id {
 					continue
+				}
+				if elevList[elevator].Queue != tmpElevList[elevator].Queue {
+					newOrder = true
 				}
 				elevList[elevator] = tmpElevList[elevator]
 			}
@@ -90,7 +94,8 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 				}
 			}
 			if newOrder {
-				syncBtnLights <- elevList[id].Queue
+				syncBtnLights <- elevList
+				//syncBtnLights <- elevList[elevator].Queue
 			}
 		}
 	}
@@ -153,15 +158,18 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 	return bestElevator
 }
 
-func GOV_lightsLoop(syncBtnLights chan [NumFloors][NumButtons]bool) {
+func GOV_lightsLoop(syncBtnLights chan [NumElevators]Elev) {
 	for {
-		queue := <-syncBtnLights
-		for floor := 0; floor < NumFloors; floor++ {
-			for btn := BtnUp; btn < NumButtons; btn++ {
-				if queue[floor][btn] {
-					hw.SetButtonLamp(btn, floor, 1)
-				} else {
-					hw.SetButtonLamp(btn, floor, 0)
+		fullQueue := <-syncBtnLights
+		for elev := 0; elev < NumElevators; elev++ {
+			for floor := 0; floor < NumFloors; floor++ {
+				for btn := BtnUp; btn < NumButtons; btn++ {
+					if fullQueue[elev].Queue[floor][btn] {
+						hw.SetButtonLamp(btn, floor, 1)
+					}
+					if !fullQueue[0].Queue[floor][btn] && !fullQueue[1].Queue[floor][btn] {
+						hw.SetButtonLamp(btn, floor, 0)
+					}
 				}
 			}
 		}

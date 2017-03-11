@@ -28,7 +28,7 @@ type SyncChannels struct {
 {assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}
 */
 
-func SYNC_loop(ch SyncChannels, id int) {
+func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][NumButtons]bool) {
 	var registeredOrders [NumFloors][NumButtons - 1]AckList
 	var elevList [NumElevators]Elev
 	var sendMsg Message
@@ -46,6 +46,21 @@ func SYNC_loop(ch SyncChannels, id int) {
 		allNotAcked[i] = NotAcked
 	}
 	ch.broadcastTimer = time.After(100 * time.Millisecond)
+
+	// A quick fix to keep the local internal orders active after an elevator-reset.
+	timeout := make(chan bool, 1)
+	go func() {
+		time.Sleep(1 * time.Second)
+		timeout <- true
+	}()
+	select {
+	case initMsg := <-ch.IncomingMsg:
+		elevList[id] = initMsg.Elevator[id]
+	case <-timeout:
+		break
+	}
+	fmt.Println("Vi gikk forbi...")
+
 	// NOTE: burde vi importere constants som def eller liknende? mer lesbart
 	for {
 		select {
@@ -120,6 +135,21 @@ func SYNC_loop(ch SyncChannels, id int) {
 								} else {
 									registeredOrders[floor][btn].ImplicitAcks[elevator] = Acked
 								}
+
+								// possible way to sync lights (on)?
+								// if registeredOrders[floor][btn].ImplicitAcks == allAcked && someUpdate {
+								// 	// c := cron.New()
+								// 	// c.AddFunc("@every 0h0m1s", func() {
+								// 	// 	var order [NumFloors][NumButtons]bool
+								// 	// 	order[floor][btn] = true
+								// 	// 	syncBtnLights <- order
+								// 	// })
+								// 	// c.Start()
+								// 	var order [NumFloors][NumButtons]bool
+								// 	order[floor][btn] = true
+								// 	syncBtnLights <- order
+								// }
+
 								if registeredOrders[floor][btn].ImplicitAcks == allAcked &&
 									!elevList[id].Queue[floor][btn] &&
 									registeredOrders[floor][btn].DesignatedElevator == id {
@@ -138,6 +168,19 @@ func SYNC_loop(ch SyncChannels, id int) {
 								} else {
 									registeredOrders[floor][btn].ImplicitAcks[elevator] = Finished
 								}
+
+								// possible way to sync button lights (off)? Ja, men den spammer!!
+								//not the best fix... I.e., not a complete fix -_-
+								// if registeredOrders[floor][btn].ImplicitAcks == allFinished && someUpdate {
+								// 	var order [NumFloors][NumButtons]bool
+								// 	order[floor][btn] = false
+								// 	//tick := time.NewTicker(250 * time.Millisecond)
+								// 	syncBtnLights <- order
+								// 	//var order [NumFloors][NumButtons]bool
+								// 	//order[floor][btn] = false
+								// 	//syncBtnLights <- order
+								// }
+
 								if registeredOrders[floor][btn].ImplicitAcks == allFinished {
 									registeredOrders[floor][btn].ImplicitAcks[id] = NotAcked
 									fmt.Println("All has acked Finished! NotAcking my Finished")

@@ -71,7 +71,7 @@ func main() {
 		PeerTxEnable:   make(chan bool),
 	}
 	btnsPressed := make(chan Keypress)
-	syncBtnLights := make(chan [NumFloors][NumButtons]bool)
+	syncBtnLights := make(chan [NumElevators]Elev) //[NumFloors][NumButtons]bool)
 
 	HW_init(e, btnsPressed, esmChans.ArrivedAtFloor, simPort)
 	//TODO: make [NumElevators]Elev it's own type
@@ -81,10 +81,11 @@ func main() {
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
 	go GOV_lightsLoop(syncBtnLights)
-	go SYNC_loop(syncChans, ID)
+	// added syncBtnLights
+	go SYNC_loop(syncChans, ID) //, syncBtnLights)
 
-	go peers.Transmitter(15648, id, syncChans.PeerTxEnable)
-	go peers.Receiver(15648, syncChans.PeerUpdate)
+	go peers.Transmitter(42035, id, syncChans.PeerTxEnable)
+	go peers.Receiver(42035, syncChans.PeerUpdate)
 	go bcast.Transmitter(42034, syncChans.OutgoingMsg)
 	go bcast.Receiver(42034, syncChans.IncomingMsg)
 	/*
@@ -141,5 +142,6 @@ func killSwitch() {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+	//Restart.Run()
 	os.Exit(1)
 }
