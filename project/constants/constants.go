@@ -46,10 +46,15 @@ type Elev struct {
 	Queue [NumFloors][NumButtons]bool
 }
 
+type PeerElevator struct {
+	ID     int
+	Status Acknowledge
+}
+
 type AckList struct {
 	DesignatedElevator int
 	//IDEA: Make this dynamic after online/offline elevators
-	ImplicitAcks [NumElevators]Acknowledge
+	ImplicitAcks []PeerElevator
 }
 
 type Message struct {
@@ -62,6 +67,7 @@ type Acknowledge int
 
 const (
 	Finished Acknowledge = iota - 1
+	Undefined
 	NotAcked
 	Acked
 )

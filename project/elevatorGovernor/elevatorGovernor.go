@@ -158,13 +158,16 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 	return bestElevator
 }
 
-func GOV_lightsLoop(syncBtnLights chan [NumElevators]Elev) {
+func GOV_lightsLoop(syncBtnLights chan [NumElevators]Elev, id int) {
 	for {
 		fullQueue := <-syncBtnLights
-		for elev := 0; elev < NumElevators; elev++ {
+		for elevator := 0; elevator < NumElevators; elevator++ {
 			for floor := 0; floor < NumFloors; floor++ {
 				for btn := BtnUp; btn < NumButtons; btn++ {
-					if fullQueue[elev].Queue[floor][btn] {
+					if btn == BtnInside && elevator != id {
+						continue
+					}
+					if fullQueue[elevator].Queue[floor][btn] {
 						hw.SetButtonLamp(btn, floor, 1)
 					}
 					if !fullQueue[0].Queue[floor][btn] && !fullQueue[1].Queue[floor][btn] {

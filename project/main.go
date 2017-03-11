@@ -80,12 +80,12 @@ func main() {
 	//QUESTION: Should we have inits as functions and then loops as gothreads?
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
-	go GOV_lightsLoop(syncBtnLights)
+	go GOV_lightsLoop(syncBtnLights, ID)
 	// added syncBtnLights
 	go SYNC_loop(syncChans, ID) //, syncBtnLights)
 
-	go peers.Transmitter(42035, id, syncChans.PeerTxEnable)
-	go peers.Receiver(42035, syncChans.PeerUpdate)
+	go peers.Transmitter(42039, id, syncChans.PeerTxEnable)
+	go peers.Receiver(42039, syncChans.PeerUpdate)
 	go bcast.Transmitter(42034, syncChans.OutgoingMsg)
 	go bcast.Receiver(42034, syncChans.IncomingMsg)
 	/*
@@ -113,7 +113,7 @@ func main() {
 	*/
 	go killSwitch()
 	/*
-		for {
+		for {gffrtgf
 			elevator.Queue[2][BtnDown] = true
 			time.Sleep(5000 * time.Millisecond)
 			syncChans.OutgoingMsg <- helloMsg
