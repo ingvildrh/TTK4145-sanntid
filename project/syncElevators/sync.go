@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"time"
+    "reflect"
 
 	"github.com/copier"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
@@ -14,7 +15,7 @@ import (
 )
 
 type SyncChannels struct {
-	UpdateGovernor chan [NumElevators]Elev
+	UpdateGovernor chan map[int]Elev
 	UpdateSync     chan Elev
 	OrderUpdate    chan Keypress
 	IncomingMsg    chan Message
@@ -24,273 +25,223 @@ type SyncChannels struct {
 	PeerTxEnable   chan bool
 }
 
-//QUESTION: should we ACK the ACK? Timeout the ACK? Or simply CheckAgain if one or more elvators become offline
+
+
 /*
-						 ACK MATRIX
-			{- - - -} 		   {assignedID elev1 elev2 elev3}
-{assignedID [{elev1, ack} {elev2, ack} {elev3, ack}]} {assignedID elev1 elev2 elev3}
-{assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}
-{assignedID elev1 elev2 elev3} 			 {- - - -}
+
+    Have assumed that:
+        governor can receive map[int]*Elev, instead of [NumElevators]Elev
+            (copy/dup of this map should not be necessary as long as Elev.Queue is array (not slice), like it is now)
+        governor deals with lights (iterates through all Elev.Queue's, sets lights based on this)
+        governor sends our own elev's queue to fsm-thing (ie sync doesnt send single new orders to fsm)
+        fsm deletes the order from it's Elev.Queue, then sends its Elev here (maybe via governor?) (ie doesnt send single "completed order" here
+            If this is not true, fix that in {select-case newOrder => switch-case Done=true}, see commented-out code
+        
+
 */
 
+
 func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][NumButtons]bool) {
-	var (
-		registeredOrders [NumFloors][NumButtons - 1]AckList
-		elevList         [NumElevators]Elev
-		sendMsg          Message
-		//allAcked           []PeerElevator
-		//allFinished        []PeerElevator
-		numOnlineElevators int
-		someUpdate         bool
-	)
-	// NOTE: status {0 0 0} trumps {-1 -1 -1}
-	// NOTE: status {0 0 1} trumps {-1 -1 1 }
-	// NOTE: possible to go from {0 0 0} -> {1 1 1} -> {-1 -1 -1} -> {0 0 0}
-	// NOTE: allAcked := [NumElevatorsOnline]Acknowledge{Acked, Acked, Acked}
 
-	// A quick fix to keep the local internal orders active after an elevator-reset.
-	timeout := make(chan bool, 1)
-	go func() {
-		time.Sleep(1 * time.Second)
-		timeout <- true
-	}()
-	select {
-	case initMsg := <-ch.IncomingMsg:
-		/*
-			elevList[id] = initMsg.Elevator[id]
-			copier.Copy(&registeredOrders, &initMsg.RegisteredOrders)*/
-		ourPeer := PeerElevator{ID: id, Status: Undefined}
-		for floor := 0; floor < NumFloors; floor++ {
-			for btn := BtnUp; btn < BtnInside; btn++ {
-				// QUESTION: Better way to do this?
-				fmt.Println("Linje 66: ", initMsg.RegisteredOrders[floor][btn].ImplicitAcks)
-				// FIXME: rename this variable please
-				registeredOrders[floor][btn].ImplicitAcks = append(registeredOrders[floor][btn].ImplicitAcks, ourPeer)
-				sort.Slice(registeredOrders[floor][btn].ImplicitAcks, func(i, j int) bool {
-					return registeredOrders[floor][btn].ImplicitAcks[i].ID < registeredOrders[floor][btn].ImplicitAcks[j].ID
-				})
-			}
-		}
+    var elevators   map[int]*Elev
+    var hallOrders  [NumFloors][NumButtons-1]OrderAckStatus
+    var peers       []int
 
-	case <-timeout:
-		fmt.Println("sync init timeout")
-		ourPeer := PeerElevator{ID: id, Status: NotAcked}
-		for floor := 0; floor < NumFloors; floor++ {
-			for btn := BtnUp; btn < BtnInside; btn++ {
-				registeredOrders[floor][btn].ImplicitAcks = append(registeredOrders[floor][btn].ImplicitAcks, ourPeer)
-			}
-		}
-		break
-	}
-	fmt.Println(registeredOrders)
-	// NOTE: burde vi importere constants som def eller liknende? mer lesbart
-	ch.broadcastTimer = time.After(100 * time.Millisecond)
+	ch.broadcastTimer = time.Tick(100 * time.Millisecond).C
 	for {
 		select {
-		case tmpElev := <-ch.UpdateSync:
-			tmpQueue := elevList[id].Queue
-			elevList[id] = tmpElev
-			elevList[id].Queue = tmpQueue
-			someUpdate = true
 
+        // New copy of our own elevator state
+		case elev := <-ch.UpdateSync:
+            if !reflect.DeepEqual(elev, elevators[id]) {
+                elevators[id] = elev
+                ch.UpdateGovernor <- elevators.Dup()
+            }
+
+        // New order, either new or done 
+/* TODO: New and Done orders are different enough to be on two separate channels */
 		case newOrder := <-ch.OrderUpdate:
-			if newOrder.Done {
-				// NB: Here we clear all orders from floor
-				elevList[id].Queue[newOrder.Floor] = [NumButtons]bool{}
-				someUpdate = true
-				if newOrder.Btn != BtnInside {
-					// FIXME: this is to prevent out of index because of BtnInside. Need better fix.
-					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id].Status = Finished
-					fmt.Println("We Finished order", PrintBtn(newOrder.Btn), "at floor", newOrder.Floor+1)
-				}
-			} else {
-				if newOrder.Btn == BtnInside {
-					// NB: Should probably send on net before adding to the queue. Exactly how unclear for now. To avoid immediate death after internal light on
-					elevList[id].Queue[newOrder.Floor][newOrder.Btn] = true
-					someUpdate = true
-				} else {
-					registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = newOrder.DesignatedElevator
-					//NB: this is for testing purposes
-					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id].Status = Acked
-					fmt.Println("We Acked new order", PrintBtn(newOrder.Btn), "at floor", newOrder.Floor+1)
-				}
-			}
+			switch newOrder.Done
+            case false:
+                ackStatus := hallOrders[newOrder.Floor][newOrder.Btn].AckStatus
+                if ackStatus == Finished || ackStatus == Undefined {
+                    hallOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = newOrder.DesignatedElevator
+                    hallOrders[newOrder.Floor][newOrder.Btn].AckStatus = NotAcked
+                    hallOrders[newOrder.Floor][newOrder.Btn].Acks = []int{id}
+                }
+            case true:
+                if len(peers) == 0 || (len(peers) == 1 && peers[0] == id) {
+                    hallOrders[newOrder.Floor][newOrder.Btn].AckStatus = Undefined
+                } else {
+                    hallOrders[newOrder.Floor][newOrder.Btn].AckStatus = Finished
+                }
+                hallOrders[newOrder.Floor][newOrder.Btn].Acks = []int{}
+/*
+                elevators[newOrder.DesignatedElevator].Queue[newOrder.Floor][newOrder.Btn] = false
+*/
+            }
 
+        // New elev+hallorders bcast from peer (or self)
 		case inMsg := <-ch.IncomingMsg:
-			var msg Message
-			//copier.Copy(&msg, &inMsg)
-			//fmt.Println("adress: ", msg, inMsg)
-			//os.Exit(1)
-			if inMsg.ID == id {
-				continue
-			} else {
-				//fmt.Println(time.Now())
-				//fmt.Println("We received ", msg.RegisteredOrders)
-				//someUpdate = false
-				if inMsg.Elevator != elevList {
-					fmt.Println("IN", inMsg.Elevator)
-					fmt.Println()
-					fmt.Println("CURR", elevList)
-					os.Exit(1)
-					fmt.Println("FUNKER")
-					tmpElevator := elevList[id]
-					//fmt.Println("tmpQueue: ", tmpQueue)
-					elevList = msg.Elevator
-					//fmt.Println("elevList: ", elevList[id].Queue)
-					elevList[id] = tmpElevator
-					someUpdate = true
-				}
-				//fmt.Println("Hello from me")
-				// IDEA: Have another ack-state ackButNotAllAcked.
-				for elevator := 0; elevator < numOnlineElevators; elevator++ {
-					if elevator == id {
-						continue
-					}
-					for floor := 0; floor < NumFloors; floor++ {
-						for btn := BtnUp; btn < BtnInside; btn++ {
-							msg := make([]PeerElevator, len(inMsg.RegisteredOrders[floor][btn].ImplicitAcks))
-							copy(msg, inMsg.RegisteredOrders[floor][btn].ImplicitAcks)
-							// IDEA: Could compress by having if new is +1 or -2 of our own status -> copy
-							//fmt.Println("148", msg)
-							//fmt.Println("elev:", elevator)
-							switch msg[elevator].Status {
-							case NotAcked:
-								if registeredOrders[floor][btn].ImplicitAcks[id].Status == Finished {
-									//registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
-									registeredOrders[floor][btn].ImplicitAcks[id].Status = NotAcked
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = NotAcked
-									//QUESTION: Shouldn't these be merged to one if-statement?
-								} else if registeredOrders[floor][btn].ImplicitAcks[id].Status == Undefined {
-									fmt.Println(registeredOrders[floor][btn].ImplicitAcks)
-									//registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
-									registeredOrders[floor][btn].ImplicitAcks[id].Status = NotAcked
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = NotAcked
-								} else {
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = NotAcked
-								}
-							case Acked:
-								if registeredOrders[floor][btn].ImplicitAcks[id].Status == NotAcked {
-									fmt.Println("Order ", PrintBtn(btn), "in floor", floor+1, "has been acked!")
-									//registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
-									registeredOrders[floor][btn].ImplicitAcks[id].Status = Acked
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = Acked
-								} else if registeredOrders[floor][btn].ImplicitAcks[id].Status == Undefined {
-									//registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
-									registeredOrders[floor][btn].ImplicitAcks[id].Status = Acked
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = Acked
-								} else {
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = Acked
-								}
 
-								if allEquals(Acked, registeredOrders[floor][btn].ImplicitAcks) &&
-									!elevList[id].Queue[floor][btn] &&
-									registeredOrders[floor][btn].DesignatedElevator == id {
-									fmt.Println("We've been assigned a new order!")
-									elevList[id].Queue[floor][btn] = true
-									someUpdate = true
-								}
-							case Finished:
-								if registeredOrders[floor][btn].ImplicitAcks[id].Status == Acked {
-									fmt.Println("Order ", PrintBtn(btn), "in floor", floor+1, "has been finished")
-									fmt.Println("msg: ", msg[floor])
-									fmt.Println("our: ", registeredOrders[floor])
-									//registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
-									registeredOrders[floor][btn].ImplicitAcks[id].Status = Finished
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = Finished
-									fmt.Println("our: ", registeredOrders[floor])
-								} else if registeredOrders[floor][btn].ImplicitAcks[id].Status == Undefined {
-									//registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
-									registeredOrders[floor][btn].ImplicitAcks[id].Status = Finished
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = Finished
-								} else {
-									registeredOrders[floor][btn].ImplicitAcks[elevator].Status = Finished
-								}
+            // Update elevator
+            if inMsg.ID != id {
+                _, exists := elevators[inMsg.ID]
+                if !exists || !reflect.DeepEqual(elevators[inMsg.ID], inMsg.Elevator) {
+                    elevators[inMsg.ID] = inMsg.Elevator
+                    ch.UpdateGovernor <- elevators.Dup()
+                }
+            }
 
-								if allEquals(Finished, registeredOrders[floor][btn].ImplicitAcks) {
-									registeredOrders[floor][btn].ImplicitAcks[id].Status = NotAcked
-									fmt.Println("All has acked Finished! NotAcking my Finished")
-								}
-							case Undefined:
-								registeredOrders[floor][btn].ImplicitAcks[id].Status = NotAcked
-							}
-						}
-					}
-				}
-				if someUpdate {
-					ch.UpdateGovernor <- elevList
-					someUpdate = false
-				}
-			}
+            // Update hall orders
+            for f := range hallOrders {
+                for b := range hallOrders[f] {
 
+                    whenAcked = func(){
+                        designated := inMsg.HallOrders[f][b].DesignatedElevator 
+                        fmt.Printf("Hall order {floor:%v, button:%v} acknowledged. Assigned to: %v", f, b, designated)
+                        if _, exists := elevators[designated]; exists {
+                            elevators[designated].Queue[f][b] = true
+                        } else {
+                            // Can only happen during init, if an order is already assigned to an elevator we haven't heard from yet
+                            // Could ignore this, but better to just take it ourselves, to be safe
+                            elevators[id].Queue[f][b] = true
+                        }
+                        ch.UpdateGovernor <- elevators.Dup()                        
+                    }
+                    whenFinished = func(){
+                        fmt.Printf("Hall order {floor:%v, button:%v} finished", f, b)
+                        ch.UpdateGovernor <- elevators.Dup()      
+
+                    }
+
+                    switch hallOrders[f][b].AckStatus {
+                    case Undefined:
+                        // Assume remote state (as long as it is also not undefined)
+                        if inMsg.ID != id {
+                            switch inMsg.HallOrders[f][b].AckStatus {
+                            case Finished:
+                                hallOrders[f][b].DesignatedElevator = 0
+                                hallOrders[f][b].AckStatus = Finished
+                                hallOrders[f][b].Acks = []int{}
+                            case NotAcked:
+                                hallOrders[f][b].DesignatedElevator = inMsg.HallOrders[f][b].DesignatedElevator
+                                hallOrders[f][b].AckStatus = NotAcked
+                                hallOrders[f][b].Acks = append(inMsg.HallOrders[f][b].Acks, id)
+                            case Acked:
+                                hallOrders[f][b].DesignatedElevator = inMsg.HallOrders[f][b].DesignatedElevator
+                                hallOrders[f][b].AckStatus = Acked
+                                hallOrders[f][b].Acks = append(inMsg.HallOrders[f][b].Acks, id)
+                                whenAcked()
+                            }
+                        }
+
+                    case Finished:
+                        // Transition to NotAcked if remote has started ack procedure
+                        switch inMsg.HallOrders[f][b].AckStatus {
+                        case NotAcked:
+                            hallOrders[f][b].DesignatedElevator = inMsg.HallOrders[f][b].DesignatedElevator
+                            hallOrders[f][b].AckStatus = NotAcked
+                            hallOrders[f][b].Acks = append(inMsg.HallOrders[f][b].Acks, id)
+                        }
+
+                    case NotAcked:
+                        // Transition to Acked if a) we see that all have acked, or b) remote says all have acked
+                        switch inMsg.HallOrders[f][b].AckStatus {
+                        case NotAcked:
+                            hallOrders[f][b].Acks = append(append(hallOrders[f][b].Acks, inMsg.HallOrders[f][b].Acks...), id)
+                            if containsAll(hallOrders[f][b].Acks, inMsg.HallOrders[f][b].Acks) {
+                                hallOrders[f][b].AckStatus = Acked
+                                whenAcked()
+                            }
+                        case Acked:
+                            hallOrders[f][b].AckStatus = Acked
+                            hallOrders[f][b].Acks = append(append(hallOrders[f][b].Acks, inMsg.HallOrders[f][b].Acks...), id)
+                            whenAcked()
+                        }
+
+                    case Acked:
+                        // Transition to Finished if remote has finished, or add any remaining acks (from late new peers)
+                        switch inMsg.HallOrders[f][b].AckStatus {
+                        case Finished:
+                            hallOrders[f][b].AckStatus = Finished
+                            hallOrders[f][b].Acks = []int{}
+                            whenFinished()                            
+                        case Acked:
+                            hallOrders[f][b].Acks = append(append(hallOrders[f][b].Acks, inMsg.HallOrders[f][b].Acks...), id)
+                        }
+                        
+                    }
+                    
+                    sort.Ints(hallOrders[f][b].Acks)
+                    hallOrders[f][b].Acks = unique(hallOrders[f][b].Acks)
+                    
+                }
+            }
+
+
+
+        // New broadcast tick: send elev+hallorders
 		case <-ch.broadcastTimer:
-			//fmt.Println("Hello to you")
-			// NB: Don't know if this works AT ALL
-			copier.Copy(&sendMsg.RegisteredOrders, &registeredOrders)
-			//fmt.Println(registeredOrders)
-			sendMsg.Elevator = elevList
-			sendMsg.ID = id
-			ch.OutgoingMsg <- sendMsg
-			//fmt.Println("We sent", sendMsg.RegisteredOrders)
-			ch.broadcastTimer = time.After(100 * time.Millisecond)
+            ch.OutgoingMsg <- Message{id, elevators[id], hallOrders.Dup()}
 
 		case p := <-ch.PeerUpdate:
-			// FIXME: Need a zeroStatus (bool) to handle One Elevator Alive and regaining connection
-			fmt.Printf("Peer update:\n")
-			fmt.Printf("  Peers:    %q\n", p.Peers)
-			fmt.Printf("  New:      %q\n", p.New)
-			fmt.Printf("  Lost:     %q\n", p.Lost)
-			numOnlineElevators = len(p.Peers)
-			if len(p.New) != 0 {
-				newID, _ := strconv.Atoi(p.New)
-				if newID == id {
-					break
-				}
-				for floor := 0; floor < NumFloors; floor++ {
-					for btn := BtnUp; btn < BtnInside; btn++ {
-						fmt.Print("Linje 219:", registeredOrders[floor][btn])
-						registeredOrders[floor][btn].ImplicitAcks = append(registeredOrders[floor][btn].ImplicitAcks,
-							PeerElevator{ID: newID, Status: Undefined})
-						sort.Slice(registeredOrders[floor][btn].ImplicitAcks, func(i, j int) bool {
-							return registeredOrders[floor][btn].ImplicitAcks[i].ID < registeredOrders[floor][btn].ImplicitAcks[j].ID
-						})
-					}
-				}
-			}
-			if len(p.Lost) != 0 {
-				lostID, _ := strconv.Atoi(p.Lost[0])
-				for floor := 0; floor < NumFloors; floor++ {
-					for btn := BtnUp; btn < BtnInside; btn++ {
-						if lostID == len(registeredOrders[floor][btn].ImplicitAcks) {
-							registeredOrders[floor][btn].ImplicitAcks = append(registeredOrders[floor][btn].ImplicitAcks[:lostID],
-								registeredOrders[floor][btn].ImplicitAcks[:lostID-1]...)
-						} else {
-							registeredOrders[floor][btn].ImplicitAcks = append(registeredOrders[floor][btn].ImplicitAcks[:lostID],
-								registeredOrders[floor][btn].ImplicitAcks[lostID+1:]...)
-						}
-					}
-				}
-			}
+            // Convert to []int
+            peers = []int{}
+            for i := range p.Peers {
+                j, err := strconv.Atoi(p.Peers[i])
+                if err != nil {
+                    panic(err)
+                }
+                peers = append(peers, j)
+            }
+            
+            // If we are alone on the network, we must be ready to accept "existing" orders from the rest of the network
+            if len(peers) == 0 || (len(peers) == 1 && peers[0] == id) {
+                for f := range hallOrders {
+                    for b := range hallOrders[f] {
+                        if hallOrders[f][b].AckStatus == Finished {
+                            hallOrders[f][b].AckStatus == Undefined
+                        }
+                    }
+                }
+            }
 		}
 	}
 }
 
-// FIXME: Change name to copyAckList? copyAckStatus? or something else?
-func copyMessage(msg Message, registeredOrders [NumFloors][NumButtons - 1]AckList, elevator, floor, id int, btn Button) [NumFloors][NumButtons - 1]AckList {
-	tmpPeerList := make([]PeerElevator, len(msg.RegisteredOrders[floor][btn].ImplicitAcks))
-	copy(tmpPeerList, msg.RegisteredOrders[floor][btn].ImplicitAcks)
-	fmt.Println("tmp", tmpPeerList)
-	registeredOrders[floor][btn].ImplicitAcks[id] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
-	registeredOrders[floor][btn].ImplicitAcks[elevator] = msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator]
-	registeredOrders[floor][btn].DesignatedElevator = msg.RegisteredOrders[floor][btn].DesignatedElevator
-	return registeredOrders
+
+
+func containsAll(a []int, b[]int) bool {
+    for i := range a {
+        if !contains(b, a[i]) {
+            return false
+        }
+    }
+    return true
 }
 
-func allEquals(status Acknowledge, v ...interface{}) bool {
-	if v[0] != status {
-		return false
-	}
-	if len(v) < 2 {
-		return true
-	}
-	return reflect.DeepEqual(v[:len(v)-1], v[1:])
+func contains(a []int, b int) bool {
+    for _, v := range a {
+        if v == b {
+            return true
+        }
+    }
+    return false
 }
+
+func unique(a []int) []int {
+    encountered := map[int]bool{}
+    result := []int{}
+
+    for v := range a {
+        if !encountered[a[v]]
+            encountered[a[v]] = true
+            result = append(result, elements[v])
+        }
+    }
+    return result
+}
+
+
+
