@@ -46,22 +46,53 @@ type Elev struct {
 	Queue [NumFloors][NumButtons]bool
 }
 
-type PeerElevator struct {
-	ID     int
-	Status Acknowledge
+type Elevs map[int]*Elev
+
+func (a Elevs) Dup() Elevs {
+	b := make(Elevs)
+	for k, v := range a {
+		var t Elev
+		t = *v
+		b[k] = v
+	}
+	return b
 }
 
-type AckList struct {
-	DesignatedElevator int
-	//IDEA: Make this dynamic after online/offline elevators
-	ImplicitAcks []PeerElevator
+type OrderAckStatus struct {
+    DesignatedElevator  int
+    AckStatus           Acknowledge
+    Acks                []int
+}
+
+func (a OrderAckStatus) Dup() OrderAckStatus {
+    var b OrderAckStatus;
+    b.DesignatedElevator = a.DesignatedElevator
+    b.AckStatus = a.AckStatus
+    b.Acks = make([]int, len(a.Acks))
+    for i := range a.Acks {
+        b.Acks[i] = a.Acks[i]
+    }
+    return b
 }
 
 type Message struct {
-	Elevator         [NumElevators]Elev
-	RegisteredOrders [NumFloors][NumButtons - 1]AckList
-	ID               int
+	ID              int
+	Elevator        Elev
+    HallOrders      [NumFloors][NumButtons-1]OrderAckStatus
 }
+
+func (a Message) Dup() Message {
+    var b Message
+    b.Elevator = a.Elevator
+    for i := range a.HallOrders {
+        for j := range a.HallOrders[i] {
+            b.HallOrders[i][j] = a.HallOrders[i][j].Dup()
+        }
+    }
+    b.ID = a.ID
+    return b
+}
+
 
 type Acknowledge int
 
