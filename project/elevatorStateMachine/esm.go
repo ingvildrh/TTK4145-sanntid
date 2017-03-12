@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	idle int = iota
+	undefined int = iota - 1
+	idle
 	moving
 	doorOpen
 )
@@ -29,6 +30,8 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 		Floor: hw.GetFloorSensorSignal(),
 		Queue: [NumFloors][NumButtons]bool{},
 	}
+	engineErrorTimer := time.NewTimer(3 * time.Second)
+	engineErrorTimer.Stop()
 	var doorTimedOut <-chan time.Time
 	ch.ElevatorChan <- elevator
 	for {
@@ -36,6 +39,7 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 		case newOrder := <-ch.NewOrderChan:
 			elevator.Queue[newOrder.Floor][newOrder.Btn] = true
 			switch elevator.State {
+
 			case idle:
 				elevator.Dir = chooseDirection(elevator)
 				hw.SetMotorDirection(elevator.Dir)
@@ -48,7 +52,9 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				} else {
 					elevator.State = moving
+					engineErrorTimer.Reset(3 * time.Second)
 				}
+
 			case moving:
 			case doorOpen:
 				if elevator.Floor == newOrder.Floor {
@@ -59,12 +65,17 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 					// NB: Here we assume all orders are cleared at a floor.
 					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				}
+
+			case undefined:
 			default:
-				fmt.Println("default error")
+				fmt.Println("idledefault error")
 			}
 			ch.ElevatorChan <- elevator
 
 		case elevator.Floor = <-ch.ArrivedAtFloor:
+			if elevator.State == undefined {
+				//trigg peer update enable osv.
+			}
 			fmt.Println("Arrived at floor", elevator.Floor+1)
 			if shouldStop(elevator) {
 				hw.SetMotorDirection(DirStop)
@@ -73,9 +84,10 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				hw.SetDoorOpenLamp(1)
 				// NB: This clears all orders on the given floor
 				elevator.Queue[elevator.Floor] = [NumButtons]bool{}
-				go func() {
-					ch.OrderComplete <- elevator.Floor
-				}()
+				go func() { ch.OrderComplete <- elevator.Floor }()
+				engineErrorTimer.Stop()
+			} else {
+				engineErrorTimer.Reset(3 * time.Second)
 			}
 			ch.ElevatorChan <- elevator
 
@@ -86,9 +98,27 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				elevator.State = idle
 			} else {
 				elevator.State = moving
+				engineErrorTimer.Reset(3 * time.Second)
 				hw.SetMotorDirection(elevator.Dir)
 			}
+		case <-engineErrorTimer.C:
+			// QUESTION: Do we need to handle special case of eg. not at same floor || sensorSignal==-1 ?
+			hw.SetMotorDirection(DirStop)
+			elevator.State = undefined
+			fmt.Println("\x1b[31;1m", "MOTOR STOP: Initiate precausionary measures!", "\x1b[0m")
+			//peers.transmitter disable
+			for i := 0; i < 10; i++ {
+				if i%2 == 0 {
+					hw.SetStopLamp(1)
+				} else {
+					hw.SetStopLamp(0)
+				}
+				time.Sleep(time.Millisecond * 200)
+			}
+			hw.SetMotorDirection(elevator.Dir)
 			ch.ElevatorChan <- elevator
+			engineErrorTimer.Reset(5 * time.Second)
+			fmt.Println("nå")
 		}
 	}
 }

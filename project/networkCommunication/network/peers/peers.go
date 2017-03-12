@@ -16,8 +16,8 @@ type PeerUpdate struct {
 }
 
 // QUESTION: not sure about the time these should be, have so far 2xDefault
-const interval = 30 * time.Millisecond
-const timeout = 100 * time.Millisecond
+const interval = 60 * time.Millisecond
+const timeout = 200 * time.Millisecond
 
 func Transmitter(port int, id string, transmitEnable <-chan bool) {
 

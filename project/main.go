@@ -33,7 +33,7 @@ func main() {
 	flag.StringVar(&elevType, "run", "", "run type")
 	flag.StringVar(&id, "id", "", "id of this peer")
 	flag.IntVar(&ID, "ID", 0, "ID of this elevator")
-	flag.StringVar(&simPort, "simPort", "9998", "simulation server port")
+	flag.StringVar(&simPort, "simPort", "39876", "simulation server port")
 	flag.Parse()
 	if ID != 0 {
 		fmt.Println("ID: ", ID)
@@ -80,7 +80,7 @@ func main() {
 	//TODO: ID should be the id from above, and then simply use map
 	//QUESTION: Should we have inits as functions and then loops as gothreads?
 	go ESM_loop(esmChans, btnsPressed)
-	go GOV_loop(ID, esmChans, synchChans.Orderupdate, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncBtnLights, syncChans.OnlineElevators)
+	go GOV_loop(ID, esmChans, syncChans.OrderUpdate, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncBtnLights, syncChans.OnlineElevators)
 	go GOV_lightsLoop(syncBtnLights, ID)
 	// added syncBtnLights
 	go SYNC_loop(syncChans, ID) //, syncBtnLights)

@@ -73,11 +73,21 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 			recentlyDied[lostID] = true
 			lostID = -1
 		}
+
 		select {
-		case tmpElev := <-ch.UpdateSync:
-			tmpQueue := elevList[id].Queue
-			elevList[id] = tmpElev
-			elevList[id].Queue = tmpQueue
+
+		case newElev := <-ch.UpdateSync:
+			oldQueue := elevList[id].Queue
+
+			if newElev.State == -1 {
+				ch.PeerTxEnable <- false
+			} else if newElev.State != -1 && elevList[id].State == -1 { //LOL PER HVA MENTE DU HER
+				ch.PeerTxEnable <- true
+			}
+
+			elevList[id] = newElev
+			elevList[id].Queue = oldQueue
+			// FIXME: We REALLY have to move state definitions to constants
 			someUpdate = true
 
 		case newOrder := <-ch.OrderUpdate:
@@ -105,12 +115,11 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 
 		case msg := <-ch.IncomingMsg:
 			// TODO: Must be able to run if only one alive
-			if msg.ID == id {
-
+			if msg.ID == id && !isSingleElevator(onlineList, id) {
+				continue
 			} else {
 				// NB: need to handle the case where an elevator has lost motor, but has net (peer disabled, network not disabled)
 				if msg.Elevator != elevList {
-					fmt.Println("FUNKER")
 					tmpElevator := elevList[id]
 					elevList = msg.Elevator
 					elevList[id] = tmpElevator
@@ -119,19 +128,21 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 				//fmt.Println("Hello from me")
 				// IDEA: Have another ack-state ackButNotAllAcked.
 				for elevator := 0; elevator < NumElevators; elevator++ {
-					if elevator == id {
+					if elevator == id && !isSingleElevator(onlineList, id) {
 						continue
 					}
 					for floor := 0; floor < NumFloors; floor++ {
 						for btn := BtnUp; btn < BtnInside; btn++ {
 							// IDEA: Could compress by having if new is +1 or -2 of our own status -> copy
 							switch msg.RegisteredOrders[floor][btn].ImplicitAcks[elevator] {
+
 							case NotAcked:
 								if registeredOrders[floor][btn].ImplicitAcks[id] == Finished {
 									registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
 								} else {
 									registeredOrders[floor][btn].ImplicitAcks[elevator] = NotAcked
 								}
+
 							case Acked:
 								if registeredOrders[floor][btn].ImplicitAcks[id] == NotAcked {
 									fmt.Println("Order ", PrintBtn(btn), "in floor", floor+1, "has been acked!")
@@ -139,7 +150,6 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 								} else {
 									registeredOrders[floor][btn].ImplicitAcks[elevator] = Acked
 								}
-
 								if checkAllAckStatus(onlineList, registeredOrders[floor][btn].ImplicitAcks, Acked) &&
 									!elevList[id].Queue[floor][btn] &&
 									registeredOrders[floor][btn].DesignatedElevator == id {
@@ -148,6 +158,7 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 									someUpdate = true
 								}
 								ch.broadcastTimer = time.After(100 * time.Millisecond)
+
 							case Finished:
 								if registeredOrders[floor][btn].ImplicitAcks[id] == Acked {
 									fmt.Println("Order ", PrintBtn(btn), "in floor", floor+1, "has been finished")
@@ -201,8 +212,11 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 					ch.reassignTimer = time.After(5 * time.Second)
 				}
 				// NB: is this safe? if not, do as goroutine!
-				ch.OnlineElevators <- onlineList
 			}
+			fmt.Println("online changed: ", onlineList)
+			tmpList := onlineList
+			go func() { ch.OnlineElevators <- tmpList }()
+
 		case <-ch.reassignTimer:
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if recentlyDied[elevator] == false {
@@ -241,10 +255,19 @@ func copyMessage(msg Message, registeredOrders [NumFloors][NumButtons - 1]AckLis
 
 func checkAllAckStatus(onlineList [NumElevators]bool, ImplicitAcks [NumElevators]Acknowledge, status Acknowledge) bool {
 	for elev := 0; elev < NumElevators; elev++ {
-		if onlineList[elev] == false {
+		if !onlineList[elev] {
 			continue
 		}
 		if ImplicitAcks[elev] != status {
+			return false
+		}
+	}
+	return true
+}
+
+func isSingleElevator(onlineList [NumElevators]bool, id int) bool {
+	for elev := 0; elev < NumElevators; elev++ {
+		if onlineList[elev] && elev != id {
 			return false
 		}
 	}
