@@ -11,9 +11,9 @@ import (
 //NOTE: queue and state info suggestion so far
 /*
   id1		 id2		 id3
- floor  floor  floor
+ state  state  state
   dir		dir		 dir
- state	 state	state
+ floor	 floor	floor
  0 0 0  0 0 0  0 0 0
  0 0 0  0 0 0  0 0 0
  0 0 0  0 0 0  0 0 0
@@ -59,6 +59,13 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 			elevList[id].Queue[completedOrder.Floor] = [NumButtons]bool{}
 			//syncBtnLights <- elevList //[id].Queue
 			orderUpdate <- completedOrder
+			fmt.Println("We will clear light for", completedOrder.Floor+1, PrintBtn(completedOrder.Btn))
+			fmt.Println()
+			// NOTE: GOOD WAY TO PRINT THE QUEUES
+			/*for f := NumFloors - 1; f > -1; f-- {
+				fmt.Println("\t0: ", elevList[0].Queue[f], "\t1: ", elevList[1].Queue[f])
+			}*/
+			fmt.Println()
 			syncBtnLights <- elevList //[id].Queue
 
 		case tmpElev := <-ch.ElevatorChan:
@@ -79,16 +86,14 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 				}
 				elevList[elevator] = tmpElevList[elevator]
 			}
-			for btn := BtnUp; btn < NumButtons; btn++ {
-				for floor := 0; floor < NumFloors; floor++ {
+			for floor := 0; floor < NumFloors; floor++ {
+				for btn := BtnUp; btn < NumButtons; btn++ {
 					// NOTE: potential problem of overwriting finished orders, then preventing new orders while acking finished
 					if tmpElevList[id].Queue[floor][btn] && !elevList[id].Queue[floor][btn] {
 						elevList[id].Queue[floor][btn] = true
 						// NOTE: We don't really need to define DesignatedElevator since esm doesn't care
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: false}
-						go func() {
-							ch.NewOrderChan <- order
-						}()
+						go func() { ch.NewOrderChan <- order }()
 						newOrder = true
 					}
 				}
@@ -158,18 +163,30 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 	return bestElevator
 }
 
-func GOV_lightsLoop(syncBtnLights chan [NumElevators]Elev) {
+func GOV_lightsLoop(syncBtnLights chan [NumElevators]Elev, id int) {
+	var (
+		orderExists      [NumElevators]bool
+		orderDoesntExist [NumElevators]bool
+	)
 	for {
-		fullQueue := <-syncBtnLights
-		for elev := 0; elev < NumElevators; elev++ {
-			for floor := 0; floor < NumFloors; floor++ {
-				for btn := BtnUp; btn < NumButtons; btn++ {
-					if fullQueue[elev].Queue[floor][btn] {
-						hw.SetButtonLamp(btn, floor, 1)
+		allQueues := <-syncBtnLights
+		for floor := 0; floor < NumFloors; floor++ {
+			for btn := BtnUp; btn < NumButtons; btn++ {
+				for elevator := 0; elevator < NumElevators; elevator++ {
+					orderExists[elevator] = false
+					if elevator != id && btn == BtnInside {
+						continue
 					}
-					if !fullQueue[0].Queue[floor][btn] && !fullQueue[1].Queue[floor][btn] {
+					if !allQueues[id].Queue[floor][btn] && btn == BtnInside {
 						hw.SetButtonLamp(btn, floor, 0)
 					}
+					if allQueues[elevator].Queue[floor][btn] {
+						hw.SetButtonLamp(btn, floor, 1)
+						orderExists[elevator] = true
+					}
+				}
+				if orderExists == orderDoesntExist {
+					hw.SetButtonLamp(btn, floor, 0)
 				}
 			}
 		}

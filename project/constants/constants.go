@@ -6,7 +6,7 @@ import "os/exec"
 const (
 	NumFloors = 4
 	//FIXME: Change back to 3 elevators
-	NumElevators = 2
+	NumElevators = 3
 	NumButtons   = 3
 )
 

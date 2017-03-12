@@ -80,7 +80,7 @@ func main() {
 	//QUESTION: Should we have inits as functions and then loops as gothreads?
 	go ESM_loop(esmChans, btnsPressed)
 	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
-	go GOV_lightsLoop(syncBtnLights)
+	go GOV_lightsLoop(syncBtnLights, ID)
 	// added syncBtnLights
 	go SYNC_loop(syncChans, ID) //, syncBtnLights)
 
@@ -135,13 +135,15 @@ func killSwitch() {
 	SetMotorDirection(DirStop)
 	fmt.Println("\x1b[31;1m", "User terminated program.", "\x1b[0m")
 	for i := 0; i < 10; i++ {
+		SetMotorDirection(DirStop)
 		if i%2 == 0 {
 			SetStopLamp(1)
 		} else {
 			SetStopLamp(0)
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond)
 	}
+	SetMotorDirection(DirStop)
 	//Restart.Run()
 	os.Exit(1)
 }

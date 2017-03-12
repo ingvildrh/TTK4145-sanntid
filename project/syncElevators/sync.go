@@ -2,6 +2,7 @@ package syncElevators
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
@@ -15,6 +16,7 @@ type SyncChannels struct {
 	IncomingMsg    chan Message
 	OutgoingMsg    chan Message
 	broadcastTimer <-chan time.Time
+	reassignTimer  <-chan time.Time
 	PeerUpdate     chan peers.PeerUpdate
 	PeerTxEnable   chan bool
 }
@@ -29,40 +31,47 @@ type SyncChannels struct {
 */
 
 func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][NumButtons]bool) {
-	var registeredOrders [NumFloors][NumButtons - 1]AckList
-	var elevList [NumElevators]Elev
-	var sendMsg Message
-	var allAcked [NumElevators]Acknowledge
-	var allFinished [NumElevators]Acknowledge
-	var allNotAcked [NumElevators]Acknowledge
-	someUpdate := false
+	var (
+		registeredOrders [NumFloors][NumButtons - 1]AckList
+		elevList         [NumElevators]Elev
+		sendMsg          Message
+		onlineElevators  [NumElevators]bool
+		recentlyDied     [NumElevators]bool
+		someUpdate       bool
+		lostID           int
+	)
 	// NOTE: status {0 0 0} trumps {-1 -1 -1}
 	// NOTE: status {0 0 1} trumps {-1 -1 1 }
 	// NOTE: possible to go from {0 0 0} -> {1 1 1} -> {-1 -1 -1} -> {0 0 0}
 	// NOTE: allAcked := [NumElevators]Acknowledge{Acked, Acked, Acked}
-	for i := 0; i < NumElevators; i++ {
-		allAcked[i] = Acked
-		allFinished[i] = Finished
-		allNotAcked[i] = NotAcked
-	}
-	ch.broadcastTimer = time.After(100 * time.Millisecond)
 
 	// A quick fix to keep the local internal orders active after an elevator-reset.
 	timeout := make(chan bool, 1)
-	go func() {
-		time.Sleep(1 * time.Second)
-		timeout <- true
-	}()
+	lostID = -1
+	go func() { time.Sleep(1 * time.Second); timeout <- true }()
 	select {
 	case initMsg := <-ch.IncomingMsg:
 		elevList[id] = initMsg.Elevator[id]
+		registeredOrders = initMsg.RegisteredOrders
+		fmt.Println("---------------------------- INIT ----------------------------")
+		fmt.Println()
+		for f := 0; f < NumFloors; f++ {
+			fmt.Println(elevList[id].Queue[f], "\t", registeredOrders[f])
+		}
+		fmt.Println()
+		fmt.Println("---------------------------- INIT DONE ------------------------")
+		someUpdate = true
 	case <-timeout:
 		break
 	}
-	fmt.Println("Vi gikk forbi...")
-
 	// NOTE: burde vi importere constants som def eller liknende? mer lesbart
+	ch.broadcastTimer = time.After(100 * time.Millisecond)
 	for {
+		if lostID != -1 {
+			fmt.Println("ELEVATOR", lostID, "DIED")
+			recentlyDied[lostID] = true
+			lostID = -1
+		}
 		select {
 		case tmpElev := <-ch.UpdateSync:
 			tmpQueue := elevList[id].Queue
@@ -91,24 +100,17 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id] = Acked
 					fmt.Println("We Acked new order", PrintBtn(newOrder.Btn), "at floor", newOrder.Floor+1)
 				}
-				// NB: This seems like a bad idea, bound to be Deadlock
-				// // sende intern knappebestilling tilbake!!
-				// ch.UpdateGovernor <- elevList
 			}
 
 		case msg := <-ch.IncomingMsg:
+			// TODO: Must be able to run if only one alive
 			if msg.ID == id {
 
 			} else {
-				//fmt.Println(time.Now())
-				//fmt.Println("We received ", msg.RegisteredOrders)
-				//someUpdate = false
 				if msg.Elevator != elevList {
 					fmt.Println("FUNKER")
 					tmpElevator := elevList[id]
-					//fmt.Println("tmpQueue: ", tmpQueue)
 					elevList = msg.Elevator
-					//fmt.Println("elevList: ", elevList[id].Queue)
 					elevList[id] = tmpElevator
 					someUpdate = true
 				}
@@ -136,28 +138,14 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 									registeredOrders[floor][btn].ImplicitAcks[elevator] = Acked
 								}
 
-								// possible way to sync lights (on)?
-								// if registeredOrders[floor][btn].ImplicitAcks == allAcked && someUpdate {
-								// 	// c := cron.New()
-								// 	// c.AddFunc("@every 0h0m1s", func() {
-								// 	// 	var order [NumFloors][NumButtons]bool
-								// 	// 	order[floor][btn] = true
-								// 	// 	syncBtnLights <- order
-								// 	// })
-								// 	// c.Start()
-								// 	var order [NumFloors][NumButtons]bool
-								// 	order[floor][btn] = true
-								// 	syncBtnLights <- order
-								// }
-
-								if registeredOrders[floor][btn].ImplicitAcks == allAcked &&
+								if checkAllAckStatus(onlineElevators, registeredOrders[floor][btn].ImplicitAcks, Acked) &&
 									!elevList[id].Queue[floor][btn] &&
 									registeredOrders[floor][btn].DesignatedElevator == id {
 									fmt.Println("We've been assigned a new order!")
 									elevList[id].Queue[floor][btn] = true
 									someUpdate = true
 								}
-
+								ch.broadcastTimer = time.After(100 * time.Millisecond)
 							case Finished:
 								if registeredOrders[floor][btn].ImplicitAcks[id] == Acked {
 									fmt.Println("Order ", PrintBtn(btn), "in floor", floor+1, "has been finished")
@@ -169,19 +157,7 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 									registeredOrders[floor][btn].ImplicitAcks[elevator] = Finished
 								}
 
-								// possible way to sync button lights (off)? Ja, men den spammer!!
-								//not the best fix... I.e., not a complete fix -_-
-								// if registeredOrders[floor][btn].ImplicitAcks == allFinished && someUpdate {
-								// 	var order [NumFloors][NumButtons]bool
-								// 	order[floor][btn] = false
-								// 	//tick := time.NewTicker(250 * time.Millisecond)
-								// 	syncBtnLights <- order
-								// 	//var order [NumFloors][NumButtons]bool
-								// 	//order[floor][btn] = false
-								// 	//syncBtnLights <- order
-								// }
-
-								if registeredOrders[floor][btn].ImplicitAcks == allFinished {
+								if checkAllAckStatus(onlineElevators, registeredOrders[floor][btn].ImplicitAcks, Finished) {
 									registeredOrders[floor][btn].ImplicitAcks[id] = NotAcked
 									fmt.Println("All has acked Finished! NotAcking my Finished")
 								}
@@ -212,6 +188,41 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 			fmt.Printf("  Peers:    %q\n", p.Peers)
 			fmt.Printf("  New:      %q\n", p.New)
 			fmt.Printf("  Lost:     %q\n", p.Lost)
+			// NB: We are dependent on string ID to be correct (0, 1 or 2)
+			if len(p.New) > 0 {
+				newID, _ := strconv.Atoi(p.New)
+				onlineElevators[newID] = true
+			} else if len(p.Lost) > 0 {
+				lostID, _ = strconv.Atoi(p.Lost[0])
+				onlineElevators[lostID] = false
+				if elevList[lostID].Queue != [NumFloors][NumButtons]bool{} && !recentlyDied[lostID] {
+					ch.reassignTimer = time.After(5 * time.Second)
+				}
+			}
+		case <-ch.reassignTimer:
+			for elevator := 0; elevator < NumElevators; elevator++ {
+				if recentlyDied[elevator] == false {
+					continue
+				}
+				recentlyDied[elevator] = false
+				for floor := 0; floor < NumFloors; floor++ {
+					for btn := BtnUp; btn < BtnInside; btn++ {
+						fmt.Println(floor, btn)
+						if elevList[elevator].Queue[floor][btn] {
+							for elev := 0; elev < NumElevators; elev++ {
+								if onlineElevators[elev] == false {
+									continue
+								}
+								elevList[elev].Queue[floor][btn] = true
+								elevList[elevator].Queue[floor][btn] = false
+								registeredOrders[floor][btn].DesignatedElevator = elev
+								elev = NumElevators
+							}
+						}
+					}
+				}
+			}
+			ch.UpdateGovernor <- elevList
 		}
 	}
 }
@@ -224,14 +235,14 @@ func copyMessage(msg Message, registeredOrders [NumFloors][NumButtons - 1]AckLis
 	return registeredOrders
 }
 
-// Function to check for changes
-// NB: Should be unneccessary
-func newInformation(msg Message, elevList [NumElevators]Elev, elevator, floor int, btn Button) bool {
-	if msg.Elevator[elevator].Queue[floor][btn] != elevList[elevator].Queue[floor][btn] ||
-		msg.Elevator[elevator].Dir != elevList[elevator].Dir ||
-		msg.Elevator[elevator].State != elevList[elevator].State ||
-		msg.Elevator[elevator].Floor != elevList[elevator].Floor {
-		return true
+func checkAllAckStatus(onlineElevators [NumElevators]bool, ImplicitAcks [NumElevators]Acknowledge, status Acknowledge) bool {
+	for elev := 0; elev < NumElevators; elev++ {
+		if onlineElevators[elev] == false {
+			continue
+		}
+		if ImplicitAcks[elev] != status {
+			return false
+		}
 	}
-	return false
+	return true
 }
