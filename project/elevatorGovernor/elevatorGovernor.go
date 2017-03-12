@@ -22,11 +22,12 @@ import (
 */
 
 // TODO: Deal with elevatorState and StateError channels
-func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
+func GOV_loop(ID int, ch esm.Channels, orderUpdate, btnsPressed chan Keypress,
 	updateSync chan Elev, updateGovernor chan [NumElevators]Elev,
-	orderUpdate chan Keypress, syncBtnLights chan [NumElevators]Elev) { //[NumFloors][NumButtons]bool) {
+	syncBtnLights chan [NumElevators]Elev, onlineElevators chan [NumElevators]bool) { //[NumFloors][NumButtons]bool) {
 	//var orderTimeout chan bool
 	var elevList [NumElevators]Elev
+	var onlineList [NumElevators]bool
 	id := ID
 	moving := 1
 	//designatedElevator := id
@@ -42,7 +43,7 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 			} else {
 				if !duplicateOrder(newLocalOrder, elevList, id) {
 					fmt.Println("New order at floor ", newLocalOrder.Floor+1, " for button ", PrintBtn(newLocalOrder.Btn))
-					newLocalOrder.DesignatedElevator = costCalculator(newLocalOrder, elevList, id)
+					newLocalOrder.DesignatedElevator = costCalculator(newLocalOrder, elevList, id, onlineList)
 					//fmt.Println("new local order given to: ", designatedElevator)
 					orderUpdate <- newLocalOrder
 				}
@@ -73,6 +74,8 @@ func GOV_loop(ID int, ch esm.Channels, btnsPressed chan Keypress,
 			elevList[id] = tmpElev
 			elevList[id].Queue = tmpQueue
 			updateSync <- elevList[id]
+
+		case onlineList = <-onlineElevators:
 
 		case tmpElevList := <-updateGovernor:
 			//fmt.Println("Some change! Governator updated")
@@ -118,7 +121,7 @@ func duplicateOrder(order Keypress, elevList [NumElevators]Elev, id int) bool {
 	return false
 }
 
-func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
+func costCalculator(order Keypress, elevList [NumElevators]Elev, id int, onlineList [NumElevators]bool) int {
 	//FIXME: This cost calcultor is stupid
 	minCost := 100
 	bestElevator := id
@@ -131,6 +134,9 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 		//fmt.Println("Heis ", elevator, "er på etasje ", elevList[elevator].Floor+1)
 		//fmt.Println("og den har state ", elevList[elevator].State)
 		//fmt.Println("og den har Dir", elevList[elevator].Dir)
+		if !onlineList[elevator] {
+			continue //disregarding dead elevators
+		}
 		floorDiff = order.Floor - elevList[elevator].Floor
 		cost := floorDiff
 		if floorDiff == 0 && elevList[elevator].State != moving {
@@ -143,11 +149,11 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int) int {
 			cost = -cost
 			floorDiff = -floorDiff
 			if elevList[elevator].Dir == DirUp {
-				cost++
+				cost += 3
 			}
 		} else if floorDiff > 0 {
 			if elevList[elevator].Dir == DirDown {
-				cost++
+				cost += 3
 			}
 		} else if elevList[elevator].State == doorOpen || elevList[elevator].State == moving {
 			cost++

@@ -62,13 +62,14 @@ func main() {
 		ArrivedAtFloor: make(chan int),
 	}
 	syncChans := SyncChannels{
-		UpdateGovernor: make(chan [NumElevators]Elev),
-		UpdateSync:     make(chan Elev),
-		IncomingMsg:    make(chan Message),
-		OutgoingMsg:    make(chan Message),
-		OrderUpdate:    make(chan Keypress),
-		PeerUpdate:     make(chan peers.PeerUpdate),
-		PeerTxEnable:   make(chan bool),
+		UpdateGovernor:  make(chan [NumElevators]Elev),
+		UpdateSync:      make(chan Elev),
+		IncomingMsg:     make(chan Message),
+		OutgoingMsg:     make(chan Message),
+		OrderUpdate:     make(chan Keypress),
+		PeerUpdate:      make(chan peers.PeerUpdate),
+		PeerTxEnable:    make(chan bool),
+		OnlineElevators: make(chan [NumElevators]bool),
 	}
 	btnsPressed := make(chan Keypress)
 	syncBtnLights := make(chan [NumElevators]Elev) //[NumFloors][NumButtons]bool)
@@ -79,7 +80,7 @@ func main() {
 	//TODO: ID should be the id from above, and then simply use map
 	//QUESTION: Should we have inits as functions and then loops as gothreads?
 	go ESM_loop(esmChans, btnsPressed)
-	go GOV_loop(ID, esmChans, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncChans.OrderUpdate, syncBtnLights)
+	go GOV_loop(ID, esmChans, synchChans.Orderupdate, btnsPressed, syncChans.UpdateSync, syncChans.UpdateGovernor, syncBtnLights, syncChans.OnlineElevators)
 	go GOV_lightsLoop(syncBtnLights, ID)
 	// added syncBtnLights
 	go SYNC_loop(syncChans, ID) //, syncBtnLights)
