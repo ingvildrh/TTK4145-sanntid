@@ -38,7 +38,6 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 		recentlyDied     [NumElevators]bool
 		someUpdate       bool
 		offline          bool
-		singleMode       bool
 		lostID           int
 	)
 	// NOTE: status {0 0 0} trumps {-1 -1 -1}
@@ -109,13 +108,6 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 			fmt.Println("ELEVATOR", lostID, "DIED")
 			recentlyDied[lostID] = true
 			lostID = -1
-		}
-
-		if isSingleElevator(onlineList, id) {
-			if !singleMode {
-				singleMode = true
-				singleModeTicker = time.NewTicker(100 * time.Millisecond)
-			}
 		}
 
 		select {
@@ -288,8 +280,12 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 			// NB: We are dependent on string ID to be correct (0, 1 or 2)
 			if len(p.Peers) == 0 {
 				offline = true
+				// QUESTION: Do we need to stop singleModeTicker here?
+				singleModeTicker.Stop()
 			} else if len(p.Peers) == 1 {
-				singleMode = true
+				singleModeTicker = time.NewTicker(100 * time.Millisecond)
+			} else {
+				singleModeTicker.Stop()
 			}
 			if len(p.New) > 0 {
 				newID, _ := strconv.Atoi(p.New)

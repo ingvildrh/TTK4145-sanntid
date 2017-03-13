@@ -80,5 +80,33 @@ func PrintBtn(btn Button) string {
 	}
 }
 
-// Restart command used to spawn a new elevator process in case of power loss (ctrl+c)
+func PrintState(state int) string {
+	switch state {
+	case -1:
+		return "UNDEFINED"
+	case 0:
+		return "IDLE"
+	case 1:
+		return "MOVING"
+	case 2:
+		return "DOOR OPEN"
+	default:
+		return "ERROR"
+	}
+}
+
+func PrintDir(dir Direction) string {
+	switch dir {
+	case DirUp:
+		return "UP"
+	case DirDown:
+		return "DOWN"
+	case DirStop:
+		return "STOP"
+	default:
+		return "ERROR"
+	}
+}
+
+// NB: Not used at all
 var Restart = exec.Command("gnome-terminal", "-x", "sh", "-c", "sleep 3s;  go run main.go -simPort=9997 -ID=0 -run=sim")

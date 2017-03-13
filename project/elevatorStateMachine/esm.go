@@ -32,12 +32,19 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 	}
 	engineErrorTimer := time.NewTimer(3 * time.Second)
 	engineErrorTimer.Stop()
+	orderCleared := false
 	var doorTimedOut <-chan time.Time
 	ch.ElevatorChan <- elevator
 	for {
 		select {
 		case newOrder := <-ch.NewOrderChan:
-			elevator.Queue[newOrder.Floor][newOrder.Btn] = true
+			if newOrder.Done {
+				elevator.Queue[newOrder.Floor][BtnUp] = false
+				elevator.Queue[newOrder.Floor][BtnDown] = false
+				orderCleared = true
+			} else {
+				elevator.Queue[newOrder.Floor][newOrder.Btn] = true
+			}
 			switch elevator.State {
 
 			case idle:
@@ -71,11 +78,9 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 			ch.ElevatorChan <- elevator
 
 		case elevator.Floor = <-ch.ArrivedAtFloor:
-			if elevator.State == undefined {
-				//trigg peer update enable osv.
-			}
 			fmt.Println("Arrived at floor", elevator.Floor+1)
-			if shouldStop(elevator) {
+			if shouldStop(elevator) || (!shouldStop(elevator) && elevator.Queue == [NumFloors][NumButtons]bool{} && orderCleared) {
+				orderCleared = false
 				hw.SetMotorDirection(DirStop)
 				doorTimedOut = time.After(3 * time.Second)
 				elevator.State = doorOpen
@@ -99,6 +104,8 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				engineErrorTimer.Reset(3 * time.Second)
 				hw.SetMotorDirection(elevator.Dir)
 			}
+			ch.ElevatorChan <- elevator
+
 		case <-engineErrorTimer.C:
 			// QUESTION: Do we need to handle special case of eg. not at same floor || sensorSignal==-1 ?
 			hw.SetMotorDirection(DirStop)

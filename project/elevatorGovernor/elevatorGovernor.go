@@ -36,6 +36,8 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 	// FIXME: state definitions in constants again ...
 	moving := 1
 	completedOrder.DesignatedElevator = id
+	elevList[id] = <-ch.ElevatorChan
+	updateSync <- elevList[id]
 
 	for {
 		select {
@@ -88,11 +90,18 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 			fmt.Println()*/
 			syncBtnLights <- elevList
 
-		case tmpElev := <-ch.ElevatorChan:
+		case newElev := <-ch.ElevatorChan:
 			tmpQueue := elevList[id].Queue
-			elevList[id] = tmpElev
+			if elevList[id].State == -1 && newElev.State != -1 {
+				onlineList[id] = true
+			}
+			elevList[id] = newElev
 			elevList[id].Queue = tmpQueue
-			if !onlineList[id] {
+			//fmt.Println("ElevList[", id, "]: ")
+			//fmt.Println("\tDir: ", PrintDir(elevList[id].Dir), "\n\tFloor: ", elevList[id].Floor+1, "\n\tState: ", PrintState(elevList[id].State))
+			//fmt.Println()
+			//fmt.Println(onlineList)
+			if onlineList[id] {
 				updateSync <- elevList[id]
 			}
 
@@ -124,6 +133,13 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 						fmt.Println("new order from Sync!")
 						go func() { ch.NewOrderChan <- order }()
 						newOrder = true
+						// NB: Is this else if TRULY safe in regards to backup / losing net etc.?
+					} else if !tmpElevList[id].Queue[floor][btn] && elevList[id].Queue[floor][btn] {
+						elevList[id].Queue[floor][btn] = false
+						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: true}
+						go func() { ch.NewOrderChan <- order }()
+						//FIXME: With this implementation, we can't call the flag newOrder
+						newOrder = true
 					}
 				}
 			}
@@ -153,10 +169,10 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int, onlineL
 	if order.Btn == BtnInside {
 		return id
 	}
-	minCost := NumButtons * NumElevators * NumFloors
+	minCost := (NumButtons * NumFloors) * NumElevators
 	bestElevator := id
-	//FIXME: should move to constnts, probably
-	idle := 0
+	//FIXME: should move to constants, probably, yes probably
+	//idle := 0
 	moving := 1
 	doorOpen := 2
 	for elevator := 0; elevator < NumElevators; elevator++ {
@@ -170,39 +186,39 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int, onlineL
 		}
 		floorDiff := order.Floor - elevList[elevator].Floor
 		cost := floorDiff
+
 		if floorDiff == 0 && elevList[elevator].State != moving {
 			fmt.Println("Assigned elevator: ", bestElevator)
 			fmt.Println("Order cost was: ", cost)
 			bestElevator = elevator
 			return bestElevator
 		}
-		if elevList[elevator].Queue != [NumFloors][NumButtons]bool{} {
-			cost += 2
-		}
 		if floorDiff < 0 {
 			cost = -cost
 			if elevList[elevator].Dir == DirUp {
+				fmt.Println("DIR UP")
 				cost += 3
 			}
 		} else if floorDiff > 0 {
 			if elevList[elevator].Dir == DirDown {
+				fmt.Println("DIR DOWN")
 				cost += 3
 			}
 		}
+		// if elevList[elevator].Queue != [NumFloors][NumButtons]bool{} {
+		// 	cost += 2
+		// }
 
-		switch elevList[elevator].State {
-		case doorOpen:
-			cost += 3
-		case idle:
-			cost++
-		case moving:
+		if elevList[elevator].State == doorOpen {
 			cost++
 		}
+
 		if cost < minCost {
 			minCost = cost
 			bestElevator = elevator
 		}
 		fmt.Println("elevator ", elevator, "has cost ", cost)
+		fmt.Println("and is in floor ", elevList[elevator].Floor+1)
 	}
 	fmt.Println("Assigned elevator: ", bestElevator)
 	fmt.Println("Order cost was", minCost)
