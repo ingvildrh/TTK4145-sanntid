@@ -7,12 +7,12 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/perkjelsvik/TTK4145-sanntid/exercises/ex04/src/localip"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorGovernor"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorStateMachine"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/hardware"
 	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/bcast"
+	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/localip"
 	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/peers"
 	. "github.com/perkjelsvik/TTK4145-sanntid/project/syncElevators"
 )
@@ -33,7 +33,7 @@ func main() {
 	flag.StringVar(&elevType, "run", "", "run type")
 	flag.StringVar(&id, "id", "", "id of this peer")
 	flag.IntVar(&ID, "ID", 0, "ID of this elevator")
-	flag.StringVar(&simPort, "simPort", "39876", "simulation server port")
+	flag.StringVar(&simPort, "simPort", "33323", "simulation server port")
 	flag.Parse()
 	if ID != 0 {
 		fmt.Println("ID: ", ID)

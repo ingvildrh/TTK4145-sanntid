@@ -38,14 +38,22 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 		//QUESTION: burde vi flytte btnsPressed til Sync?? hehe
 		case newLocalOrder := <-btnsPressed:
 			// QUESTION: Move state: idle, moving and doorOpen to constants? Or something like this?
-			if newLocalOrder.Floor == elevList[id].Floor && elevList[id].State != moving {
-				ch.NewOrderChan <- newLocalOrder
+			if !onlineList[id] && newLocalOrder.Btn == BtnInside {
+				elevList[id].Queue[newLocalOrder.Floor][BtnInside] = true
+				syncBtnLights <- elevList
+				go func() { ch.NewOrderChan <- newLocalOrder }()
+			} else if !onlineList[id] && newLocalOrder.Btn != BtnInside {
+				fmt.Println("Ignore external orders")
 			} else {
-				if !duplicateOrder(newLocalOrder, elevList, id) {
-					fmt.Println("New order at floor ", newLocalOrder.Floor+1, " for button ", PrintBtn(newLocalOrder.Btn))
-					newLocalOrder.DesignatedElevator = costCalculator(newLocalOrder, elevList, id, onlineList)
-					//fmt.Println("new local order given to: ", designatedElevator)
-					orderUpdate <- newLocalOrder
+				if newLocalOrder.Floor == elevList[id].Floor && elevList[id].State != moving {
+					ch.NewOrderChan <- newLocalOrder
+				} else {
+					if !duplicateOrder(newLocalOrder, elevList, id) {
+						fmt.Println("New order at floor ", newLocalOrder.Floor+1, " for button ", PrintBtn(newLocalOrder.Btn))
+						newLocalOrder.DesignatedElevator = costCalculator(newLocalOrder, elevList, id, onlineList)
+						//fmt.Println("new local order given to: ", designatedElevator)
+						orderUpdate <- newLocalOrder
+					}
 				}
 			}
 
@@ -59,7 +67,9 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 			}
 			elevList[id].Queue[completedOrder.Floor] = [NumButtons]bool{}
 			//syncBtnLights <- elevList //[id].Queue
-			orderUpdate <- completedOrder
+			if onlineList[id] {
+				orderUpdate <- completedOrder
+			}
 			fmt.Println("We will clear light for", completedOrder.Floor+1, PrintBtn(completedOrder.Btn))
 			fmt.Println()
 			// NOTE: GOOD WAY TO PRINT THE QUEUES
@@ -67,13 +77,15 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 				fmt.Println("\t0: ", elevList[0].Queue[f], "\t1: ", elevList[1].Queue[f])
 			}*/
 			fmt.Println()
-			syncBtnLights <- elevList //[id].Queue
+			syncBtnLights <- elevList
 
 		case tmpElev := <-ch.ElevatorChan:
 			tmpQueue := elevList[id].Queue
 			elevList[id] = tmpElev
 			elevList[id].Queue = tmpQueue
-			updateSync <- elevList[id]
+			if !onlineList[id] {
+				updateSync <- elevList[id]
+			}
 
 		case tmpOnlineList := <-onlineElevators:
 			onlineList = tmpOnlineList
@@ -97,6 +109,7 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 						elevList[id].Queue[floor][btn] = true
 						// NOTE: We don't really need to define DesignatedElevator since esm doesn't care
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: false}
+						fmt.Println("new order from Sync!")
 						go func() { ch.NewOrderChan <- order }()
 						newOrder = true
 					}
@@ -127,7 +140,7 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int, onlineL
 	if order.Btn == BtnInside {
 		return id
 	}
-	minCost := 32
+	minCost := NumButtons * NumElevators * NumFloors
 	bestElevator := id
 	//FIXME: should move to constnts, probably
 	idle := 0

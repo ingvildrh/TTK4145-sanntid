@@ -15,8 +15,6 @@ type SyncChannels struct {
 	OrderUpdate     chan Keypress
 	IncomingMsg     chan Message
 	OutgoingMsg     chan Message
-	broadcastTimer  <-chan time.Time
-	reassignTimer   <-chan time.Time
 	PeerUpdate      chan peers.PeerUpdate
 	PeerTxEnable    chan bool
 	OnlineElevators chan [NumElevators]bool
@@ -39,6 +37,7 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 		onlineList       [NumElevators]bool
 		recentlyDied     [NumElevators]bool
 		someUpdate       bool
+		offline          bool
 		lostID           int
 	)
 	// NOTE: status {0 0 0} trumps {-1 -1 -1}
@@ -63,25 +62,85 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 		fmt.Println("---------------------------- INIT DONE ------------------------")
 		someUpdate = true
 	case <-timeout:
+		//offline = true
 		break
 	}
 	// NOTE: burde vi importere constants som def eller liknende? mer lesbart
-	ch.broadcastTimer = time.After(100 * time.Millisecond)
+	broadcastTicker := time.NewTicker(100 * time.Millisecond)
+	reassignTimer := time.NewTimer(5 * time.Second)
+	singleModeTicker := time.NewTicker(100 * time.Millisecond) //for testing purposes
+	simTimer := time.NewTimer(20 * time.Second)
+	simTimer.Stop()
+	if id != 2 {
+		simTimer = time.NewTimer(20 * time.Second) //for testing purposes
+	}
+	singleModeTicker.Stop()
+	reassignTimer.Stop()
+	offline = false
+	prevStatus := true
 	for {
+
+		if offline {
+			if onlineList[id] {
+				offline = false
+				fmt.Println("Broke the code?")
+				reInitTimer := time.NewTimer(1000 * time.Millisecond)
+			REINIT:
+				for {
+					select {
+					case reInitMsg := <-ch.IncomingMsg:
+						fmt.Println("We got a ReInit Message!")
+						if reInitMsg.Elevator != elevList && reInitMsg.ID == 2 {
+							tmpElevator := elevList[id]
+							elevList = reInitMsg.Elevator
+							elevList[id] = tmpElevator
+							someUpdate = true
+							break REINIT
+						}
+					case <-reInitTimer.C:
+						fmt.Println("BREAK THE FOR LOOP")
+						break REINIT
+					}
+				}
+				fmt.Println("select over")
+			}
+			//fmt.Print(elevList[id].Queue)
+		}
+
 		if lostID != -1 {
 			fmt.Println("ELEVATOR", lostID, "DIED")
 			recentlyDied[lostID] = true
 			lostID = -1
 		}
 
+		if isSingleElevator(onlineList, id) {
+			if !prevStatus {
+				singleModeTicker = time.NewTicker(100 * time.Millisecond)
+				prevStatus = true
+			}
+		}
+
 		select {
+		case <-simTimer.C:
+			if !offline {
+				offline = true
+				ch.PeerTxEnable <- false
+				onlineList = [NumElevators]bool{}
+				fmt.Println("------------- LOST INTERNET -------------")
+				simTimer.Reset(20 * time.Second)
+			} else {
+				onlineList[id] = true
+				ch.PeerTxEnable <- true
+				fmt.Println("------------- REGAINED INTERNET -------------")
+				simTimer.Reset(20 * time.Second)
+			}
 
 		case newElev := <-ch.UpdateSync:
 			oldQueue := elevList[id].Queue
 
 			if newElev.State == -1 {
 				ch.PeerTxEnable <- false
-			} else if newElev.State != -1 && elevList[id].State == -1 { //LOL PER HVA MENTE DU HER
+			} else if newElev.State != -1 && elevList[id].State == -1 {
 				ch.PeerTxEnable <- true
 			}
 
@@ -115,7 +174,7 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 
 		case msg := <-ch.IncomingMsg:
 			// TODO: Must be able to run if only one alive
-			if msg.ID == id && !isSingleElevator(onlineList, id) {
+			if msg.ID == id || !onlineList[msg.ID] || !onlineList[id] {
 				continue
 			} else {
 				// NB: need to handle the case where an elevator has lost motor, but has net (peer disabled, network not disabled)
@@ -128,7 +187,7 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 				//fmt.Println("Hello from me")
 				// IDEA: Have another ack-state ackButNotAllAcked.
 				for elevator := 0; elevator < NumElevators; elevator++ {
-					if elevator == id && !isSingleElevator(onlineList, id) {
+					if elevator == id || !onlineList[msg.ID] || !onlineList[id] {
 						continue
 					}
 					for floor := 0; floor < NumFloors; floor++ {
@@ -145,7 +204,7 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 
 							case Acked:
 								if registeredOrders[floor][btn].ImplicitAcks[id] == NotAcked {
-									fmt.Println("Order ", PrintBtn(btn), "in floor", floor+1, "has been acked!")
+									fmt.Println("Order ", PrintBtn(btn), "from ", msg.ID, "in floor", floor+1, "has been acked!")
 									registeredOrders = copyMessage(msg, registeredOrders, elevator, floor, id, btn)
 								} else {
 									registeredOrders[floor][btn].ImplicitAcks[elevator] = Acked
@@ -157,7 +216,6 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 									elevList[id].Queue[floor][btn] = true
 									someUpdate = true
 								}
-								ch.broadcastTimer = time.After(100 * time.Millisecond)
 
 							case Finished:
 								if registeredOrders[floor][btn].ImplicitAcks[id] == Acked {
@@ -186,14 +244,39 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 				//QUESTION: How to share elevList between the threads in the best way?
 				//fmt.Println(time.Now())
 			}
-		case <-ch.broadcastTimer:
+
+		case <-singleModeTicker.C:
+			// FIXME: Not properly checked, also this print is invalid
+			fmt.Println("offlineTick")
+			for floor := 0; floor < NumFloors; floor++ {
+				for btn := BtnUp; btn < BtnInside; btn++ {
+					if registeredOrders[floor][btn].ImplicitAcks[id] == Acked &&
+						!elevList[id].Queue[floor][btn] {
+						fmt.Println("We've been assigned a new order!")
+						elevList[id].Queue[floor][btn] = true
+						someUpdate = true
+					}
+					if registeredOrders[floor][btn].ImplicitAcks[id] == Finished {
+						registeredOrders[floor][btn].ImplicitAcks[id] = NotAcked
+					}
+
+				}
+			}
+			if someUpdate {
+				fmt.Println("her")
+				ch.UpdateGovernor <- elevList
+				someUpdate = false
+			}
+
+		case <-broadcastTicker.C:
 			//fmt.Println("Hello to you")
 			sendMsg.RegisteredOrders = registeredOrders
 			sendMsg.Elevator = elevList
 			sendMsg.ID = id
-			ch.OutgoingMsg <- sendMsg
+			if onlineList != [NumElevators]bool{} {
+				ch.OutgoingMsg <- sendMsg
+			}
 			//fmt.Println("We sent", sendMsg.RegisteredOrders)
-			ch.broadcastTimer = time.After(100 * time.Millisecond)
 
 		case p := <-ch.PeerUpdate:
 			// FIXME: Need a zeroStatus (bool) to handle One Elevator Alive and regaining connection
@@ -202,6 +285,11 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 			fmt.Printf("  New:      %q\n", p.New)
 			fmt.Printf("  Lost:     %q\n", p.Lost)
 			// NB: We are dependent on string ID to be correct (0, 1 or 2)
+			if len(p.Peers) == 0 {
+				offline = true
+			} else if len(p.Peers) == 1 {
+				prevStatus = false
+			}
 			if len(p.New) > 0 {
 				newID, _ := strconv.Atoi(p.New)
 				onlineList[newID] = true
@@ -209,15 +297,15 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 				lostID, _ = strconv.Atoi(p.Lost[0])
 				onlineList[lostID] = false
 				if elevList[lostID].Queue != [NumFloors][NumButtons]bool{} && !recentlyDied[lostID] {
-					ch.reassignTimer = time.After(5 * time.Second)
+					reassignTimer.Reset(1 * time.Second)
 				}
-				// NB: is this safe? if not, do as goroutine!
 			}
 			fmt.Println("online changed: ", onlineList)
 			tmpList := onlineList
+			// NB: is this safe? if not, do as goroutine!
 			go func() { ch.OnlineElevators <- tmpList }()
 
-		case <-ch.reassignTimer:
+		case <-reassignTimer.C:
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if recentlyDied[elevator] == false {
 					continue
@@ -225,16 +313,21 @@ func SYNC_loop(ch SyncChannels, id int) { //, syncBtnLights chan [NumFloors][Num
 				recentlyDied[elevator] = false
 				for floor := 0; floor < NumFloors; floor++ {
 					for btn := BtnUp; btn < BtnInside; btn++ {
-						fmt.Println(floor, btn)
 						if elevList[elevator].Queue[floor][btn] {
 							for elev := 0; elev < NumElevators; elev++ {
-								if !onlineList[elev] {
-									continue
+								if onlineList == [NumElevators]bool{} {
+									elevList[id].Queue[floor][btn] = true
+									elevList[elevator].Queue[floor][btn] = false
+									registeredOrders[floor][btn].DesignatedElevator = id
+								} else {
+									if !onlineList[elev] {
+										continue
+									}
+									elevList[elev].Queue[floor][btn] = true
+									elevList[elevator].Queue[floor][btn] = false
+									registeredOrders[floor][btn].DesignatedElevator = elev
+									elev = NumElevators
 								}
-								elevList[elev].Queue[floor][btn] = true
-								elevList[elevator].Queue[floor][btn] = false
-								registeredOrders[floor][btn].DesignatedElevator = elev
-								elev = NumElevators
 							}
 						}
 					}
