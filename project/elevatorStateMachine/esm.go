@@ -79,7 +79,8 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 
 		case elevator.Floor = <-ch.ArrivedAtFloor:
 			fmt.Println("Arrived at floor", elevator.Floor+1)
-			if shouldStop(elevator) || (!shouldStop(elevator) && elevator.Queue == [NumFloors][NumButtons]bool{} && orderCleared) {
+			if shouldStop(elevator) ||
+				(!shouldStop(elevator) && elevator.Queue == [NumFloors][NumButtons]bool{} && orderCleared) {
 				orderCleared = false
 				hw.SetMotorDirection(DirStop)
 				doorTimedOut = time.After(3 * time.Second)
