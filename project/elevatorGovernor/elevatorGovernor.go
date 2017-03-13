@@ -22,17 +22,21 @@ import (
 */
 
 // TODO: Deal with elevatorState and StateError channels
+// FIXME: Just pass all the sync-channels
 func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed chan Keypress,
 	updateSync chan Elev, updateGovernor chan [NumElevators]Elev,
 	syncBtnLights chan [NumElevators]Elev, onlineElevators chan [NumElevators]bool) { //[NumFloors][NumButtons]bool) {
 	//var orderTimeout chan bool
-	var elevList [NumElevators]Elev
-	var onlineList [NumElevators]bool
+	var (
+		elevList       [NumElevators]Elev
+		onlineList     [NumElevators]bool
+		completedOrder Keypress
+	)
 	id := ID
+	// FIXME: state definitions in constants again ...
 	moving := 1
-	//designatedElevator := id
-	var completedOrder Keypress
 	completedOrder.DesignatedElevator = id
+
 	for {
 		select {
 		//QUESTION: burde vi flytte btnsPressed til Sync?? hehe
@@ -65,18 +69,23 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 					completedOrder.Btn = btn
 				}
 			}
-			elevList[id].Queue[completedOrder.Floor] = [NumButtons]bool{}
+			for elevator := 0; elevator < NumElevators; elevator++ {
+				for btn := BtnUp; btn < BtnInside; btn++ {
+					elevList[elevator].Queue[completedOrder.Floor][btn] = false
+				}
+			}
+			elevList[id].Queue[completedOrder.Floor][BtnInside] = false
 			//syncBtnLights <- elevList //[id].Queue
 			if onlineList[id] {
 				orderUpdate <- completedOrder
 			}
 			fmt.Println("We will clear light for", completedOrder.Floor+1, PrintBtn(completedOrder.Btn))
-			fmt.Println()
+			//fmt.Println()
 			// NOTE: GOOD WAY TO PRINT THE QUEUES
 			/*for f := NumFloors - 1; f > -1; f-- {
 				fmt.Println("\t0: ", elevList[0].Queue[f], "\t1: ", elevList[1].Queue[f])
-			}*/
-			fmt.Println()
+			}
+			fmt.Println()*/
 			syncBtnLights <- elevList
 
 		case tmpElev := <-ch.ElevatorChan:
@@ -88,6 +97,7 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 			}
 
 		case tmpOnlineList := <-onlineElevators:
+			// IDEA: can have offline variable instead, check it in top of the for
 			onlineList = tmpOnlineList
 
 		case tmpElevList := <-updateGovernor:
@@ -102,12 +112,14 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 				}
 				elevList[elevator] = tmpElevList[elevator]
 			}
+
 			for floor := 0; floor < NumFloors; floor++ {
 				for btn := BtnUp; btn < NumButtons; btn++ {
 					// NOTE: potential problem of overwriting finished orders, then preventing new orders while acking finished
 					if tmpElevList[id].Queue[floor][btn] && !elevList[id].Queue[floor][btn] {
 						elevList[id].Queue[floor][btn] = true
 						// NOTE: We don't really need to define DesignatedElevator since esm doesn't care
+						// QUESTION: Do we actually use the struct field DesignatedElevator?
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: false}
 						fmt.Println("new order from Sync!")
 						go func() { ch.NewOrderChan <- order }()
@@ -115,6 +127,7 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 					}
 				}
 			}
+
 			if newOrder {
 				syncBtnLights <- elevList
 				//syncBtnLights <- elevList[elevator].Queue
