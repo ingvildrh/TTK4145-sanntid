@@ -22,12 +22,3 @@ func checkAllAckStatus(onlineList [NumElevators]bool, ImplicitAcks [NumElevators
 	}
 	return true
 }
-
-func isSingleElevator(onlineList [NumElevators]bool, id int) bool {
-	for elev := 0; elev < NumElevators; elev++ {
-		if onlineList[elev] && elev != id {
-			return false
-		}
-	}
-	return true
-}

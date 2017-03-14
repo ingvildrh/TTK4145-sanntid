@@ -1,10 +1,6 @@
 package elevatorGovernor
 
-import (
-	"fmt"
-
-	. "github.com/perkjelsvik/TTK4145-sanntid/project/config"
-)
+import . "github.com/perkjelsvik/TTK4145-sanntid/project/config"
 
 func duplicateOrder(order Keypress, elevList [NumElevators]Elev, id int) bool {
 	if order.Btn == BtnInside && elevList[id].Queue[order.Floor][BtnInside] {
@@ -32,22 +28,22 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int, onlineL
 		cost := order.Floor - elevList[elevator].Floor
 
 		if cost == 0 && elevList[elevator].State != Moving {
-			fmt.Println("Assigned elevator: ", bestElevator)
-			fmt.Println("Order cost was: ", cost)
 			bestElevator = elevator
 			return bestElevator
 		}
+
 		if cost < 0 {
 			cost = -cost
 			if elevList[elevator].Dir == DirUp {
-				fmt.Println("DIR UP")
 				cost += 3
 			}
 		} else if cost > 0 {
 			if elevList[elevator].Dir == DirDown {
-				fmt.Println("DIR DOWN")
 				cost += 3
 			}
+		}
+		if cost == 0 && elevList[elevator].State == Moving {
+			cost += 4
 		}
 
 		if elevList[elevator].State == DoorOpen {
@@ -58,11 +54,6 @@ func costCalculator(order Keypress, elevList [NumElevators]Elev, id int, onlineL
 			minCost = cost
 			bestElevator = elevator
 		}
-
-		fmt.Println("elevator ", elevator, "has cost ", cost)
-		fmt.Println("and is in floor ", elevList[elevator].Floor+1)
 	}
-	fmt.Println("Assigned elevator: ", bestElevator)
-	fmt.Println("Order cost was", minCost)
 	return bestElevator
 }

@@ -9,20 +9,14 @@ import (
 	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/conn"
 )
 
-type PeerChannels struct {
-	PeerUpdate   chan PeerUpdate
-	PeerTxEnable chan bool
-}
-
 type PeerUpdate struct {
 	Peers []string
 	New   string
 	Lost  []string
 }
 
-// QUESTION: not sure about the time these should be, have so far 8xDefault
 const interval = 25 * time.Millisecond
-const timeout = 1000 * time.Millisecond
+const timeout = 1 * time.Second
 
 func Transmitter(port int, id string, transmitEnable <-chan bool) {
 

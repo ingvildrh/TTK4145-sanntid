@@ -9,6 +9,7 @@ import (
 	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/peers"
 )
 
+// SyncChannels contains all channels between governor - sync and sync - network
 type SyncChannels struct {
 	UpdateGovernor  chan [NumElevators]Elev
 	UpdateSync      chan Elev
@@ -22,6 +23,7 @@ type SyncChannels struct {
 
 // How orders up and down are acknowledged between the elevators
 /*------------------------------------------------------------------*
+|									▲															▼										|
 |		{assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}		|
 |		{assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}		|
 |		{assignedID elev1 elev2 elev3} {assignedID elev1 elev2 elev3}		|
@@ -41,27 +43,23 @@ func Synchronise(ch SyncChannels, id int) {
 	)
 
 	timeout := make(chan bool)
-	lostID := -1
 	go func() { time.Sleep(1 * time.Second); timeout <- true }()
+
 	select {
 	case initMsg := <-ch.IncomingMsg:
 		elevList = initMsg.Elevator
 		registeredOrders = initMsg.RegisteredOrders
-		fmt.Print("-------------------------- INIT ---------------------------\n\n")
-		for f := 0; f < NumFloors; f++ {
-			fmt.Println(elevList[id].Queue[f], "\t", registeredOrders[f])
-		}
-		fmt.Println("\n------------------------- INIT DONE -----------------------")
 		someUpdate = true
 	case <-timeout:
 		offline = true
-		break
 	}
-	broadcastTicker := time.NewTicker(100 * time.Millisecond)
+
+	lostID := -1
 	reassignTimer := time.NewTimer(5 * time.Second)
+	broadcastTicker := time.NewTicker(100 * time.Millisecond)
 	singleModeTicker := time.NewTicker(100 * time.Millisecond)
-	singleModeTicker.Stop()
 	reassignTimer.Stop()
+	singleModeTicker.Stop()
 
 	for {
 
@@ -123,7 +121,8 @@ func Synchronise(ch SyncChannels, id int) {
 				} else {
 					registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator = newOrder.DesignatedElevator
 					registeredOrders[newOrder.Floor][newOrder.Btn].ImplicitAcks[id] = Acked
-					fmt.Println("We Acked new order", newOrder.Btn, "at floor", newOrder.Floor+1)
+					fmt.Println("We acknowledged a new order", newOrder.Btn, "at floor", newOrder.Floor+1)
+					fmt.Println("\tdesignated to", registeredOrders[newOrder.Floor][newOrder.Btn].DesignatedElevator)
 				}
 			}
 
@@ -179,7 +178,6 @@ func Synchronise(ch SyncChannels, id int) {
 										elevList[id].Queue[floor][btn] = false
 										someUpdate = true
 									}
-									fmt.Println("All has acked Finished! NotAcking my Finished")
 								}
 							}
 						}
@@ -212,10 +210,10 @@ func Synchronise(ch SyncChannels, id int) {
 			}
 
 		case <-broadcastTicker.C:
-			sendMsg.RegisteredOrders = registeredOrders
-			sendMsg.Elevator = elevList
-			sendMsg.ID = id
 			if !offline {
+				sendMsg.RegisteredOrders = registeredOrders
+				sendMsg.Elevator = elevList
+				sendMsg.ID = id
 				ch.OutgoingMsg <- sendMsg
 			}
 
@@ -243,7 +241,7 @@ func Synchronise(ch SyncChannels, id int) {
 					reassignTimer.Reset(1 * time.Second)
 				}
 			}
-			fmt.Println("online changed: ", onlineList)
+			fmt.Println("Online elevators changed: ", onlineList)
 			tmpList := onlineList
 			go func() { ch.OnlineElevators <- tmpList }()
 

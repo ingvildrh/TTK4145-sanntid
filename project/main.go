@@ -37,7 +37,6 @@ func main() {
 		fmt.Println("Running in simulation mode!")
 	}
 
-	// TODO: Define channels as input/output/bidirectional instead of all bidirectional
 	esmChans := esm.StateMachineChannels{
 		OrderComplete:  make(chan int),
 		Elevator:       make(chan Elev),
@@ -78,7 +77,7 @@ func main() {
 }
 
 func killSwitch() {
-	// safeKill turns the motor off if the program is killed with CTRL+C.
+	// killSwitch turns the motor off if the program is killed with CTRL+C.
 	c := make(chan os.Signal)
 	signal.Notify(c, os.Interrupt)
 	<-c

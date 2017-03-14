@@ -7,7 +7,7 @@ import (
 	hw "github.com/perkjelsvik/TTK4145-sanntid/project/hardware"
 )
 
-// Structure of elevList (0 = false, 1 = true)
+// Structure of elevList (0 = Inactive, 1 = Active)
 /*------------------------*
 |    id1		id2		 id3		|
 | 	state  state  state		|
@@ -20,7 +20,7 @@ import (
 *------------------------*/
 
 // Governate called as goroutine; receives button presses, assigns esm and updates sync
-func Governate(ID int, btnsPressedCh chan Keypress, lightUpdateCh chan [NumElevators]Elev,
+func Governate(id int, btnsPressedCh chan Keypress, lightUpdateCh chan [NumElevators]Elev,
 	orderCompleteCh chan int, newOrderCh chan Keypress, elevatorCh chan Elev,
 	orderUpdateCh chan Keypress, updateSyncCh chan Elev, updateGovernorCh chan [NumElevators]Elev,
 	onlineElevatorsCh chan [NumElevators]bool) {
@@ -30,7 +30,6 @@ func Governate(ID int, btnsPressedCh chan Keypress, lightUpdateCh chan [NumEleva
 		onlineList     [NumElevators]bool
 		completedOrder Keypress
 	)
-	id := ID
 	completedOrder.DesignatedElevator = id
 	elevList[id] = <-elevatorCh
 	updateSyncCh <- elevList[id]
@@ -63,13 +62,13 @@ func Governate(ID int, btnsPressedCh chan Keypress, lightUpdateCh chan [NumEleva
 				if elevList[id].Queue[completedOrder.Floor][btn] {
 					completedOrder.Btn = btn
 				}
-			}
-			for elevator := 0; elevator < NumElevators; elevator++ {
-				for btn := BtnUp; btn < BtnInside; btn++ {
-					elevList[elevator].Queue[completedOrder.Floor][btn] = false
+				for elevator := 0; elevator < NumElevators; elevator++ {
+					if btn != BtnInside || elevator == id {
+						elevList[elevator].Queue[completedOrder.Floor][btn] = false
+					}
 				}
 			}
-			elevList[id].Queue[completedOrder.Floor][BtnInside] = false
+
 			if onlineList[id] {
 				orderUpdateCh <- completedOrder
 			}
@@ -108,7 +107,6 @@ func Governate(ID int, btnsPressedCh chan Keypress, lightUpdateCh chan [NumEleva
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: false}
 						go func() { newOrderCh <- order }()
 						newOrder = true
-						// NB: Is this else if TRULY safe in regards to backup / losing net etc.?
 					} else if !tmpElevList[id].Queue[floor][btn] && elevList[id].Queue[floor][btn] {
 						elevList[id].Queue[floor][btn] = false
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: true}

@@ -1,10 +1,6 @@
 package elevatorStateMachine
 
-import (
-	"fmt"
-
-	. "github.com/perkjelsvik/TTK4145-sanntid/project/config"
-)
+import . "github.com/perkjelsvik/TTK4145-sanntid/project/config"
 
 func shouldStop(elevator Elev) bool {
 	switch elevator.Dir {
@@ -18,7 +14,6 @@ func shouldStop(elevator Elev) bool {
 			!ordersBelow(elevator)
 	case DirStop:
 	default:
-		fmt.Println("something went wrong with shouldStop")
 	}
 	return false
 }
