@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
+	. "github.com/perkjelsvik/TTK4145-sanntid/project/config"
 )
 
 const MOTOR_SPEED = 2800
@@ -26,7 +26,6 @@ var button_channel_matrix = [NumFloors][NumButtons]int{
 	{BUTTON_UP4, BUTTON_DOWN4, BUTTON_COMMAND4},
 }
 
-// Elev_type type
 type Elev_type int
 
 const (
@@ -34,12 +33,14 @@ const (
 	ET_Simulation
 )
 
-var elevatorType Elev_type = ET_Comedi
-var conn *net.TCPConn
-var mtx *sync.Mutex
-var sim_port string
+var (
+	elevatorType Elev_type = ET_Comedi
+	conn         *net.TCPConn
+	mtx          *sync.Mutex
+	sim_port     string
+)
 
-func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int, simPort string) {
+func Init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int, simPort string) {
 	sim_port = simPort
 	elevatorType = e
 	switch elevatorType {
@@ -77,9 +78,6 @@ func HW_init(e Elev_type, btnsPressed chan Keypress, ArrivedAtFloor chan int, si
 	SetStopLamp(0)
 	SetDoorOpenLamp(0)
 	setFloorIndicator(GetFloorSensorSignal())
-	// FIXME: Move these goroutines to main
-	go buttonPoller(btnsPressed)
-	go floorIndicatorLoop(ArrivedAtFloor)
 }
 
 func SetMotorDirection(dirn Direction) {
@@ -249,7 +247,7 @@ func getObstructionSignal() int {
 	return 0
 }
 
-func buttonPoller(btnsPressed chan Keypress) {
+func ButtonPoller(btnsPressedCh chan Keypress) {
 	var btnPress Keypress
 	var btnsPressedMatrix [NumButtons][NumFloors]int
 	for {
@@ -258,11 +256,9 @@ func buttonPoller(btnsPressed chan Keypress) {
 			for btn := BtnUp; btn < NumButtons; btn++ {
 				v := getButtonSignal(btn, floor)
 				if v == 1 && btnsPressedMatrix[btn][floor] != 1 {
-					// NOTE: Should NOT set btn lamp when governor up and running
-					//SetButtonLamp(btn, floor, 1)
 					btnPress.Btn = btn
 					btnPress.Floor = floor
-					btnsPressed <- btnPress
+					btnsPressedCh <- btnPress
 				}
 				btnsPressedMatrix[btn][floor] = v
 			}
@@ -270,7 +266,7 @@ func buttonPoller(btnsPressed chan Keypress) {
 	}
 }
 
-func floorIndicatorLoop(ArrivedAtFloor chan int) {
+func FloorIndicatorLoop(ArrivedAtFloor chan int) {
 	prevFloor := GetFloorSensorSignal()
 	for {
 		time.Sleep(time.Millisecond * 20)

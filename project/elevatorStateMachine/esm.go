@@ -4,28 +4,23 @@ import (
 	"fmt"
 	"time"
 
-	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
+	. "github.com/perkjelsvik/TTK4145-sanntid/project/config"
 	hw "github.com/perkjelsvik/TTK4145-sanntid/project/hardware"
 )
 
-const (
-	undefined int = iota - 1
-	idle
-	moving
-	doorOpen
-)
-
-type Channels struct {
+// StateMachineChannels contains all channels between governor - esm and hardware - esm
+type StateMachineChannels struct {
 	OrderComplete  chan int
-	ElevatorChan   chan Elev
+	Elevator       chan Elev
 	StateError     chan error
-	NewOrderChan   chan Keypress
+	NewOrder       chan Keypress
 	ArrivedAtFloor chan int
 }
 
-func ESM_loop(ch Channels, btnsPressed chan Keypress) {
+// RunElevator called as a goroutine; runs elevator and updates governor for changes
+func RunElevator(ch StateMachineChannels) {
 	elevator := Elev{
-		State: idle,
+		State: Idle,
 		Dir:   DirStop,
 		Floor: hw.GetFloorSensorSignal(),
 		Queue: [NumFloors][NumButtons]bool{},
@@ -33,11 +28,12 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 	engineErrorTimer := time.NewTimer(3 * time.Second)
 	engineErrorTimer.Stop()
 	orderCleared := false
-	var doorTimedOut <-chan time.Time
-	ch.ElevatorChan <- elevator
+	doorTimedOut := time.NewTimer(3 * time.Second)
+	ch.Elevator <- elevator
+
 	for {
 		select {
-		case newOrder := <-ch.NewOrderChan:
+		case newOrder := <-ch.NewOrder:
 			if newOrder.Done {
 				elevator.Queue[newOrder.Floor][BtnUp] = false
 				elevator.Queue[newOrder.Floor][BtnDown] = false
@@ -47,72 +43,69 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 			}
 			switch elevator.State {
 
-			case idle:
+			case Idle:
 				elevator.Dir = chooseDirection(elevator)
 				hw.SetMotorDirection(elevator.Dir)
 				if elevator.Dir == DirStop {
-					elevator.State = doorOpen
+					elevator.State = DoorOpen
 					hw.SetDoorOpenLamp(1)
-					doorTimedOut = time.After(3 * time.Second)
-					// NB: Here we assume all orders are cleared at a floor.
+					doorTimedOut.Reset(3 * time.Second)
 					go func() { ch.OrderComplete <- newOrder.Floor }()
 					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				} else {
-					elevator.State = moving
+					elevator.State = Moving
 					engineErrorTimer.Reset(3 * time.Second)
 				}
 
-			case moving:
-			case doorOpen:
+			case Moving:
+			case DoorOpen:
 				if elevator.Floor == newOrder.Floor {
-					doorTimedOut = time.After(3 * time.Second)
+					doorTimedOut.Reset(3 * time.Second)
 					go func() { ch.OrderComplete <- newOrder.Floor }()
-					// NB: Here we assume all orders are cleared at a floor.
 					elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				}
 
-			case undefined:
+			case Undefined:
 			default:
-				fmt.Println("idledefault error")
+				fmt.Println("Idle default error")
 			}
-			ch.ElevatorChan <- elevator
+			ch.Elevator <- elevator
 
 		case elevator.Floor = <-ch.ArrivedAtFloor:
 			fmt.Println("Arrived at floor", elevator.Floor+1)
 			if shouldStop(elevator) ||
 				(!shouldStop(elevator) && elevator.Queue == [NumFloors][NumButtons]bool{} && orderCleared) {
+				// NB: Test without orderCleared, shouldn't be necessary
 				orderCleared = false
 				hw.SetMotorDirection(DirStop)
-				doorTimedOut = time.After(3 * time.Second)
-				elevator.State = doorOpen
 				hw.SetDoorOpenLamp(1)
-				// NB: This clears all orders on the given floor
+				engineErrorTimer.Stop()
+				elevator.State = DoorOpen
+				doorTimedOut.Reset(3 * time.Second)
 				elevator.Queue[elevator.Floor] = [NumButtons]bool{}
 				go func() { ch.OrderComplete <- elevator.Floor }()
-				engineErrorTimer.Stop()
-			} else {
+			} else if elevator.State == Moving {
 				engineErrorTimer.Reset(3 * time.Second)
 			}
-			ch.ElevatorChan <- elevator
+			ch.Elevator <- elevator
 
-		case <-doorTimedOut:
+		case <-doorTimedOut.C:
 			hw.SetDoorOpenLamp(0)
 			elevator.Dir = chooseDirection(elevator)
 			if elevator.Dir == DirStop {
-				elevator.State = idle
+				elevator.State = Idle
+				engineErrorTimer.Stop()
 			} else {
-				elevator.State = moving
+				elevator.State = Moving
 				engineErrorTimer.Reset(3 * time.Second)
 				hw.SetMotorDirection(elevator.Dir)
 			}
-			ch.ElevatorChan <- elevator
+			ch.Elevator <- elevator
 
 		case <-engineErrorTimer.C:
-			// QUESTION: Do we need to handle special case of eg. not at same floor || sensorSignal==-1 ?
 			hw.SetMotorDirection(DirStop)
-			elevator.State = undefined
-			fmt.Println("\x1b[31;1m", "MOTOR STOP: Initiate precausionary measures!", "\x1b[0m")
-			//peers.transmitter disable
+			elevator.State = Undefined
+			fmt.Println("\x1b[1;1;33m", "MOTOR STOP: Initiate precausionary measures!", "\x1b[0m")
 			for i := 0; i < 10; i++ {
 				if i%2 == 0 {
 					hw.SetStopLamp(1)
@@ -122,79 +115,8 @@ func ESM_loop(ch Channels, btnsPressed chan Keypress) {
 				time.Sleep(time.Millisecond * 200)
 			}
 			hw.SetMotorDirection(elevator.Dir)
-			ch.ElevatorChan <- elevator
+			ch.Elevator <- elevator
 			engineErrorTimer.Reset(5 * time.Second)
-			fmt.Println("nå")
 		}
 	}
-}
-
-func shouldStop(elevator Elev) bool {
-	switch elevator.Dir {
-	case DirUp:
-		return elevator.Queue[elevator.Floor][BtnUp] ||
-			elevator.Queue[elevator.Floor][BtnInside] ||
-			!ordersAbove(elevator)
-	case DirDown:
-		return elevator.Queue[elevator.Floor][BtnDown] ||
-			elevator.Queue[elevator.Floor][BtnInside] ||
-			!ordersBelow(elevator)
-	case DirStop:
-	default:
-		fmt.Println("something went wrong with shouldStop")
-	}
-	return false
-}
-
-func chooseDirection(elevator Elev) Direction {
-	switch elevator.Dir {
-	case DirStop:
-		if ordersAbove(elevator) {
-			return DirUp
-		} else if ordersBelow(elevator) {
-			return DirDown
-		} else {
-			return DirStop
-		}
-	case DirUp:
-		if ordersAbove(elevator) {
-			return DirUp
-		} else if ordersBelow(elevator) {
-			return DirDown
-		} else {
-			return DirStop
-		}
-
-	case DirDown:
-		if ordersBelow(elevator) {
-			return DirDown
-		} else if ordersAbove(elevator) {
-			return DirUp
-		} else {
-			return DirStop
-		}
-	}
-	return DirStop
-}
-
-func ordersAbove(elevator Elev) bool {
-	for floor := elevator.Floor + 1; floor < NumFloors; floor++ {
-		for btn := 0; btn < NumButtons; btn++ {
-			if elevator.Queue[floor][btn] {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func ordersBelow(elevator Elev) bool {
-	for floor := 0; floor < elevator.Floor; floor++ {
-		for btn := 0; btn < NumButtons; btn++ {
-			if elevator.Queue[floor][btn] {
-				return true
-			}
-		}
-	}
-	return false
 }

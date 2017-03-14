@@ -3,69 +3,62 @@ package elevatorGovernor
 import (
 	"fmt"
 
-	. "github.com/perkjelsvik/TTK4145-sanntid/project/constants"
-	esm "github.com/perkjelsvik/TTK4145-sanntid/project/elevatorStateMachine"
+	. "github.com/perkjelsvik/TTK4145-sanntid/project/config"
 	hw "github.com/perkjelsvik/TTK4145-sanntid/project/hardware"
 )
 
-//NOTE: queue and state info suggestion so far
-/*
-  id1		 id2		 id3
- state  state  state
-  dir		dir		 dir
- floor	 floor	floor
- 0 0 0  0 0 0  0 0 0
- 0 0 0  0 0 0  0 0 0
- 0 0 0  0 0 0  0 0 0
- 0 0 0  0 0 0  0 0 0
- 0 = false, 1 = true
-*/
+// Structure of elevList (0 = false, 1 = true)
+/*------------------------*
+|    id1		id2		 id3		|
+| 	state  state  state		|
+|    dir		dir		 dir		|
+| 	floor	 floor	floor		|
+| 	0 0 0  0 0 0  0 0 0		|
+| 	0 0 0  0 0 0  0 0 0		|
+| 	0 0 0  0 0 0  0 0 0		|
+| 	0 0 0  0 0 0  0 0 0		|
+*------------------------*/
 
-// TODO: Deal with elevatorState and StateError channels
-// FIXME: Just pass all the sync-channels
-func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed chan Keypress,
-	updateSync chan Elev, updateGovernor chan [NumElevators]Elev,
-	syncBtnLights chan [NumElevators]Elev, onlineElevators chan [NumElevators]bool) { //[NumFloors][NumButtons]bool) {
-	//var orderTimeout chan bool
+// Governate called as goroutine; receives button presses, assigns esm and updates sync
+func Governate(ID int, btnsPressedCh chan Keypress, lightUpdateCh chan [NumElevators]Elev,
+	orderCompleteCh chan int, newOrderCh chan Keypress, elevatorCh chan Elev,
+	orderUpdateCh chan Keypress, updateSyncCh chan Elev, updateGovernorCh chan [NumElevators]Elev,
+	onlineElevatorsCh chan [NumElevators]bool) {
+
 	var (
 		elevList       [NumElevators]Elev
 		onlineList     [NumElevators]bool
 		completedOrder Keypress
 	)
 	id := ID
-	// FIXME: state definitions in constants again ...
-	moving := 1
 	completedOrder.DesignatedElevator = id
-	elevList[id] = <-ch.ElevatorChan
-	updateSync <- elevList[id]
+	elevList[id] = <-elevatorCh
+	updateSyncCh <- elevList[id]
 
 	for {
 		select {
-		//QUESTION: burde vi flytte btnsPressed til Sync?? hehe
-		case newLocalOrder := <-btnsPressed:
-			// QUESTION: Move state: idle, moving and doorOpen to constants? Or something like this?
+		case newLocalOrder := <-btnsPressedCh:
 			if !onlineList[id] && newLocalOrder.Btn == BtnInside {
 				elevList[id].Queue[newLocalOrder.Floor][BtnInside] = true
-				syncBtnLights <- elevList
-				go func() { ch.NewOrderChan <- newLocalOrder }()
+				lightUpdateCh <- elevList
+				go func() { newOrderCh <- newLocalOrder }()
 			} else if !onlineList[id] && newLocalOrder.Btn != BtnInside {
-				fmt.Println("Ignore external orders")
+				// Do nothing
+				continue
 			} else {
-				if newLocalOrder.Floor == elevList[id].Floor && elevList[id].State != moving {
-					ch.NewOrderChan <- newLocalOrder
+				if newLocalOrder.Floor == elevList[id].Floor && elevList[id].State != Moving {
+					newOrderCh <- newLocalOrder
 				} else {
 					if !duplicateOrder(newLocalOrder, elevList, id) {
-						fmt.Println("New order at floor ", newLocalOrder.Floor+1, " for button ", PrintBtn(newLocalOrder.Btn))
+						fmt.Println("New order at floor ", newLocalOrder.Floor+1, " for button ", newLocalOrder.Btn)
 						newLocalOrder.DesignatedElevator = costCalculator(newLocalOrder, elevList, id, onlineList)
-						//fmt.Println("new local order given to: ", designatedElevator)
-						orderUpdate <- newLocalOrder
+						orderUpdateCh <- newLocalOrder
 					}
 				}
 			}
 
-		case completedOrder.Floor = <-ch.OrderComplete:
+		case completedOrder.Floor = <-orderCompleteCh:
 			completedOrder.Done = true
-			// QUESTION: We only return the floor. Here we set only 1 btnPress. Still acking works in sync?????????
 			for btn := BtnUp; btn < NumButtons; btn++ {
 				if elevList[id].Queue[completedOrder.Floor][btn] {
 					completedOrder.Btn = btn
@@ -77,40 +70,26 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 				}
 			}
 			elevList[id].Queue[completedOrder.Floor][BtnInside] = false
-			//syncBtnLights <- elevList //[id].Queue
 			if onlineList[id] {
-				orderUpdate <- completedOrder
+				orderUpdateCh <- completedOrder
 			}
-			fmt.Println("We will clear light for", completedOrder.Floor+1, PrintBtn(completedOrder.Btn))
-			//fmt.Println()
-			// NOTE: GOOD WAY TO PRINT THE QUEUES
-			/*for f := NumFloors - 1; f > -1; f-- {
-				fmt.Println("\t0: ", elevList[0].Queue[f], "\t1: ", elevList[1].Queue[f])
-			}
-			fmt.Println()*/
-			syncBtnLights <- elevList
+			lightUpdateCh <- elevList
 
-		case newElev := <-ch.ElevatorChan:
+		case newElev := <-elevatorCh:
 			tmpQueue := elevList[id].Queue
-			if elevList[id].State == -1 && newElev.State != -1 {
+			if elevList[id].State == Undefined && newElev.State != Undefined {
 				onlineList[id] = true
 			}
 			elevList[id] = newElev
 			elevList[id].Queue = tmpQueue
-			//fmt.Println("ElevList[", id, "]: ")
-			//fmt.Println("\tDir: ", PrintDir(elevList[id].Dir), "\n\tFloor: ", elevList[id].Floor+1, "\n\tState: ", PrintState(elevList[id].State))
-			//fmt.Println()
-			//fmt.Println(onlineList)
 			if onlineList[id] {
-				updateSync <- elevList[id]
+				updateSyncCh <- elevList[id]
 			}
 
-		case tmpOnlineList := <-onlineElevators:
-			// IDEA: can have offline variable instead, check it in top of the for
-			onlineList = tmpOnlineList
+		case copyOnlineList := <-onlineElevatorsCh:
+			onlineList = copyOnlineList
 
-		case tmpElevList := <-updateGovernor:
-			//fmt.Println("Some change! Governator updated")
+		case tmpElevList := <-updateGovernorCh:
 			newOrder := false
 			for elevator := 0; elevator < NumElevators; elevator++ {
 				if elevator == id {
@@ -124,130 +103,48 @@ func GOV_loop(ID int, ch esm.Channels, orderUpdate chan Keypress, btnsPressed ch
 
 			for floor := 0; floor < NumFloors; floor++ {
 				for btn := BtnUp; btn < NumButtons; btn++ {
-					// NOTE: potential problem of overwriting finished orders, then preventing new orders while acking finished
 					if tmpElevList[id].Queue[floor][btn] && !elevList[id].Queue[floor][btn] {
 						elevList[id].Queue[floor][btn] = true
-						// NOTE: We don't really need to define DesignatedElevator since esm doesn't care
-						// QUESTION: Do we actually use the struct field DesignatedElevator?
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: false}
-						fmt.Println("new order from Sync!")
-						go func() { ch.NewOrderChan <- order }()
+						go func() { newOrderCh <- order }()
 						newOrder = true
 						// NB: Is this else if TRULY safe in regards to backup / losing net etc.?
 					} else if !tmpElevList[id].Queue[floor][btn] && elevList[id].Queue[floor][btn] {
 						elevList[id].Queue[floor][btn] = false
 						order := Keypress{Floor: floor, Btn: btn, DesignatedElevator: id, Done: true}
-						go func() { ch.NewOrderChan <- order }()
-						//FIXME: With this implementation, we can't call the flag newOrder
+						go func() { newOrderCh <- order }()
 						newOrder = true
 					}
 				}
 			}
 
 			if newOrder {
-				syncBtnLights <- elevList
-				//syncBtnLights <- elevList[elevator].Queue
+				lightUpdateCh <- elevList
 			}
 		}
 	}
 }
 
-func duplicateOrder(order Keypress, elevList [NumElevators]Elev, id int) bool {
-	if order.Btn == BtnInside && elevList[id].Queue[order.Floor][BtnInside] {
-		return true
-	}
-	for elevator := 0; elevator < NumElevators; elevator++ {
-		if elevList[id].Queue[order.Floor][order.Btn] {
-			return true
-		}
-	}
-	return false
-}
+// LightSetter called as goroutine, responsible for setting/clearing lights for every order change
+func LightSetter(lightUpdateChan <-chan [NumElevators]Elev, id int) {
+	var orderExists [NumElevators]bool
 
-func costCalculator(order Keypress, elevList [NumElevators]Elev, id int, onlineList [NumElevators]bool) int {
-	//FIXME: This cost calcultor is stupid
-	if order.Btn == BtnInside {
-		return id
-	}
-	minCost := (NumButtons * NumFloors) * NumElevators
-	bestElevator := id
-	//FIXME: should move to constants, probably, yes probably
-	//idle := 0
-	moving := 1
-	doorOpen := 2
-	for elevator := 0; elevator < NumElevators; elevator++ {
-		// QUESTION: How to do Abs() properly?? any way?
-		//fmt.Println("Heis ", elevator, "er på etasje ", elevList[elevator].Floor+1)
-		//fmt.Println("og den har state ", elevList[elevator].State)
-		//fmt.Println("og den har Dir", elevList[elevator].Dir)
-		fmt.Println("COST (online):", onlineList)
-		if !onlineList[elevator] {
-			continue //disregarding dead elevators
-		}
-		floorDiff := order.Floor - elevList[elevator].Floor
-		cost := floorDiff
-
-		if floorDiff == 0 && elevList[elevator].State != moving {
-			fmt.Println("Assigned elevator: ", bestElevator)
-			fmt.Println("Order cost was: ", cost)
-			bestElevator = elevator
-			return bestElevator
-		}
-		if floorDiff < 0 {
-			cost = -cost
-			if elevList[elevator].Dir == DirUp {
-				fmt.Println("DIR UP")
-				cost += 3
-			}
-		} else if floorDiff > 0 {
-			if elevList[elevator].Dir == DirDown {
-				fmt.Println("DIR DOWN")
-				cost += 3
-			}
-		}
-		// if elevList[elevator].Queue != [NumFloors][NumButtons]bool{} {
-		// 	cost += 2
-		// }
-
-		if elevList[elevator].State == doorOpen {
-			cost++
-		}
-
-		if cost < minCost {
-			minCost = cost
-			bestElevator = elevator
-		}
-		fmt.Println("elevator ", elevator, "has cost ", cost)
-		fmt.Println("and is in floor ", elevList[elevator].Floor+1)
-	}
-	fmt.Println("Assigned elevator: ", bestElevator)
-	fmt.Println("Order cost was", minCost)
-	return bestElevator
-}
-
-func GOV_lightsLoop(syncBtnLights chan [NumElevators]Elev, id int) {
-	var (
-		orderExists      [NumElevators]bool
-		orderDoesntExist [NumElevators]bool
-	)
 	for {
-		allQueues := <-syncBtnLights
+		elevs := <-lightUpdateChan
 		for floor := 0; floor < NumFloors; floor++ {
 			for btn := BtnUp; btn < NumButtons; btn++ {
 				for elevator := 0; elevator < NumElevators; elevator++ {
 					orderExists[elevator] = false
 					if elevator != id && btn == BtnInside {
+						// Ignore inside orders for other elevators
 						continue
 					}
-					if !allQueues[id].Queue[floor][btn] && btn == BtnInside {
-						hw.SetButtonLamp(btn, floor, 0)
-					}
-					if allQueues[elevator].Queue[floor][btn] {
+					if elevs[elevator].Queue[floor][btn] {
 						hw.SetButtonLamp(btn, floor, 1)
 						orderExists[elevator] = true
 					}
 				}
-				if orderExists == orderDoesntExist {
+				if orderExists == [NumElevators]bool{} {
 					hw.SetButtonLamp(btn, floor, 0)
 				}
 			}

@@ -9,6 +9,11 @@ import (
 	"github.com/perkjelsvik/TTK4145-sanntid/project/networkCommunication/network/conn"
 )
 
+type PeerChannels struct {
+	PeerUpdate   chan PeerUpdate
+	PeerTxEnable chan bool
+}
+
 type PeerUpdate struct {
 	Peers []string
 	New   string
