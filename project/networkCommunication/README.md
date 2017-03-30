@@ -1,9 +1,7 @@
 # Network module for Go (UDP broadcast only)
 
 This network module is written by [TTK4145](https://github.com/TTK4145)
-and can be found [here](https://github.com/TTK4145/Network-go). We've so far
-not made any changes or used it all. Will most likeley delete some functionality,
-like `localip`. If time allows it, maybe write the whole module from scratch.
+and can be found [here](https://github.com/TTK4145/Network-go). We've modified to code to suit our needs a little bit, but it is mostly the same as the original module.
 
 
 Features
