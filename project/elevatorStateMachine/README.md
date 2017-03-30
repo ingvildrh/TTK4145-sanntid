@@ -2,8 +2,9 @@
 
 This is our finite state machine of the system. It has `3 states` and `3 events`.
 What does the finite state machine do? It takes local orders from the queue,
-which it then proceeds to execute. It handles motor direction iteself, as well
-as door timeout and door light.
+which it then proceeds to execute. It handles motor direction, as well
+as door timeout and door light. It also has a timer to prevent starvation, for example
+if the motor power is lost. 
 
 States | Events
 ------------ | -------------
