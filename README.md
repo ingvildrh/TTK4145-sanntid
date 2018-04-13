@@ -1,12 +1,9 @@
 # [TTK4145-Sanntidsprogrammering](https://www.ntnu.no/studier/emner/TTK4145)
 
-## DISCLAIMER 
-This is a course I'm currently undertaking, so this repo and readme won't be finalized quite yet, though the project has been finished.
-
 ## Course Content 
 Programming formalisms for real-time systems; POSIX, Ada, Java and Go. Threads/processes, synchronization and communication. Shared variable-based synchronization and resource control. Fault Tolerance, availability and consistency. Message-based synchronization, CSP and formal methods. Exercises and project. 
 
-In this course, we have a term project. I am in a group with two other students. The project counts 25% of the final grade. Here's a brief description of the project and our solution so far: 
+In this course, we had a term project, where I was in a group with two other students. The project counts 25% of the final grade. Here's a brief description of the project and our solution: 
 
 ## Elevator project
 ### Description
@@ -23,16 +20,20 @@ In the project, we start with `1 <= n <= 3` elevators, and `m == 4` floors. Howe
   - **How the elevator behaves when it cannot connect to the network during initialization**
   - **How the hall (call up, call down) buttons work when the elevator is disconnected from the network**
  
-Lastly, there are some permitted assumptions: 
+Lastly, there were some permitted assumptions: 
 
   - **At least one elevator is always working normally**
   - **No multiple simultaneous errors: Only one error happens at a time, but the system must still return to a fail-safe state after this error**
   - **No network partitioning: Situations where there are multiple sets of two or more elevators with no connection between them can be ignored**
   - **Stop button and obstruction switch are disabled**
 
-For full details on each point, the driver files, or the full specs of the project: head over to [`TTK4145`](https://github.com/TTK4145/Project#elevator-project)
+For full details on each point, the driver files, or the full specs of the project: head over to [`TTK4145`](https://github.com/TTK4145/Project#elevator-project) (the description/project might have changed as the course is held every spring)
 
 ## Our solution
-We wrote our soloution in `Google GO`. This was a new language for us, so it required some learning. We decided to use a _"fleeting master"_ together with **UDP broadcasting**. This means that **all elevators knows about all orders** and that **all elevators knows about all other elevators `state`, `direction` and `floor`**. The elevator that receives an external order, will be the one to decide which elevator should execute the order. This decision, along with the order, is broadcasted to all other elevators on the network. The order is then implicitly acknowledged between the elevators before execution. If an elevator lost network or failed to finish the order in a certain time, the other elevators would take over the order. If an elevator is operating normally, only without network, it functioned as a locally run elevator.
+We wrote our soloution in `Google GO`. This was a new language for us, so it required some learning. We decided to use a _"fleeting master"_ together with **UDP broadcasting**. This means that **all elevators knows about all orders** and that **all elevators knows about all other elevators `state`, `direction` and `floor`**. The elevator that receives an external order, will be the one to decide which elevator should execute the order. This decision, along with the order, is broadcasted to all other elevators on the network. The order is then implicitly acknowledged between the elevators before execution. If an elevator lost network or failed to finish the order in a certain time, the other elevators would take over the order. If an elevator is operating normally, only without network, it functioned as a locally run elevator. More details can be found in the subfolders of this project.
+
+In terms of performance, the system performed great. Network packet loss was for example not a problem for our solution in relation to the project requirments. However, there were points of improvement that could be done. For example, one module of the project ended up becoming somewhat of a "fix-it-all"-module, where more divisions of tasks would improve the code neatness and readability. Also, even though scaling the system wouldn't require a lot of work, data types shared between modules and changing these could have been benefited of being more dynamic. 
+
+This project took a lot of work to complete, but it gave great experience and was a lot of fun. Our end result is something we're satisified with. 
 
 _This `README` will be updated after completion of the course_
