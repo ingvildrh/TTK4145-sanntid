@@ -35,5 +35,3 @@ We wrote our soloution in `Google GO`. This was a new language for us, so it req
 In terms of performance, the system performed great. Network packet loss was for example not a problem for our solution in relation to the project requirments. However, there were points of improvement that could be done. For example, one module of the project ended up becoming somewhat of a "fix-it-all"-module, where more divisions of tasks would improve the code neatness and readability. Also, even though scaling the system wouldn't require a lot of work, data types shared between modules and changing these could have been benefited of being more dynamic. 
 
 This project took a lot of work to complete, but it gave great experience and was a lot of fun. Our end result is something we're satisified with. 
-
-_This `README` will be updated after completion of the course_
